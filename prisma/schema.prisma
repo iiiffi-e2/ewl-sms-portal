@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  nurse
+}
+
+enum ConversationStatus {
+  new
+  sms_sent
+  awaiting_reply
+  replied
+  escalated
+  closed
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+enum MessageStatus {
+  queued
+  sent
+  delivered
+  failed
+  received
+}
+
+model User {
+  id                    String         @id @default(uuid())
+  name                  String
+  email                 String         @unique
+  passwordHash          String
+  role                  UserRole       @default(nurse)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  assignedConversations Conversation[] @relation("ConversationAssignee")
+  sentMessages          Message[]
+  notes                 InternalNote[]
+  callLogs              CallLog[]
+}
+
+model Contact {
+  id                    String         @id @default(uuid())
+  name                  String?
+  phone                 String         @unique
+  facility              String?
+  notes                 String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  conversations         Conversation[]
+
+  @@index([name])
+  @@index([phone])
+  @@index([facility])
+}
+
+model Conversation {
+  id            String             @id @default(uuid())
+  contactId     String
+  status        ConversationStatus @default(new)
+  assignedToId  String?
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  contact       Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages      Message[]
+  callLogs      CallLog[]
+  notes         InternalNote[]
+
+  @@index([contactId])
+  @@index([assignedToId])
+  @@index([lastMessageAt])
+  @@index([status])
+}
+
+model Message {
+  id             String           @id @default(uuid())
+  conversationId String
+  userId         String?
+  body           String
+  direction      MessageDirection
+  status         MessageStatus
+  twilioSid      String?          @unique
+  errorMessage   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([status])
+}
+
+model Template {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  category  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([category])
+}
+
+model CallLog {
+  id            String        @id @default(uuid())
+  conversationId String?
+  phone         String
+  initiatedById String?
+  twilioSid     String?
+  startedAt     DateTime      @default(now())
+  endedAt       DateTime?
+  outcome       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  conversation  Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  initiatedBy   User?         @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([initiatedById])
+  @@index([phone])
+}
+
+model InternalNote {
+  id             String       @id @default(uuid())
+  conversationId String
+  userId         String
+  body           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([userId])
+}
