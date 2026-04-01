@@ -1,6 +1,34 @@
 import { withAuth } from "next-auth/middleware";
 
-export default withAuth();
+export default withAuth(
+  function middleware() {
+    return;
+  },
+  {
+    callbacks: {
+      authorized: ({ token, req }) => {
+        if (!token) {
+          return false;
+        }
+
+        const { pathname } = req.nextUrl;
+
+        if (pathname.startsWith("/templates")) {
+          return token.role === "admin";
+        }
+
+        if (
+          pathname.startsWith("/api/templates") &&
+          req.method !== "GET"
+        ) {
+          return token.role === "admin";
+        }
+
+        return true;
+      },
+    },
+  },
+);
 
 export const config = {
   matcher: [
