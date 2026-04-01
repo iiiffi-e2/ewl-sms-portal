@@ -29,7 +29,13 @@ export async function GET(request: Request) {
       },
       messages: {
         orderBy: { createdAt: "desc" },
-        take: 1,
+        take: 5,
+        select: {
+          id: true,
+          body: true,
+          direction: true,
+          createdAt: true,
+        },
       },
     },
   });
