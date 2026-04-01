@@ -116,101 +116,207 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   }, [conversationId, loadConversationDetail, loadConversations]);
 
   const defaultPhone = useMemo(() => activeConversation?.contact.phone ?? "", [activeConversation]);
+  const showConversationPane = isNewConversation || Boolean(conversationId);
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] gap-4">
-      <aside className="flex w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-          placeholder="Search name, phone, or facility"
-        />
-        <button
-          className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
-          onClick={() => {
-            setIsNewConversation(true);
-            setConversationId(null);
-          }}
-        >
-          New Conversation
-        </button>
-        <ConversationList
-          conversations={conversations}
-          selectedConversationId={conversationId ?? undefined}
-          onSelect={(id) => {
-            setConversationId(id);
-            setIsNewConversation(false);
-          }}
-        />
-      </aside>
+    <>
+      <div className="flex h-[calc(100dvh-5rem)] flex-col gap-3 lg:hidden">
+        {!showConversationPane ? (
+          <aside className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm"
+              placeholder="Search name, phone, or facility"
+            />
+            <button
+              className="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white"
+              onClick={() => {
+                setIsNewConversation(true);
+                setConversationId(null);
+              }}
+            >
+              New Conversation
+            </button>
+            <ConversationList
+              conversations={conversations}
+              selectedConversationId={conversationId ?? undefined}
+              onSelect={(id) => {
+                setConversationId(id);
+                setIsNewConversation(false);
+              }}
+            />
+          </aside>
+        ) : (
+          <section className="flex min-h-0 flex-1 flex-col gap-3">
+            <button
+              className="w-fit rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
+              onClick={() => {
+                setConversationId(null);
+                setIsNewConversation(false);
+              }}
+            >
+              Back to conversations
+            </button>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+              <ConversationHeader
+                conversationId={activeConversation?.id}
+                contactName={activeConversation?.contact.name}
+                phone={isNewConversation ? undefined : activeConversation?.contact.phone}
+                facility={activeConversation?.contact.facility}
+                status={activeConversation?.status}
+                onStatusChange={async (status) => {
+                  if (!activeConversation) return;
+                  await fetch(`/api/conversations/${activeConversation.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status }),
+                  });
+                  await loadConversationDetail(activeConversation.id);
+                  await loadConversations();
+                }}
+              />
+              <div className="min-h-0 h-[40dvh]">
+                <MessageThread messages={activeConversation?.messages ?? []} />
+              </div>
+              <MessageComposer
+                templates={templates}
+                conversationId={isNewConversation ? undefined : activeConversation?.id}
+                defaultPhone={defaultPhone}
+                onSend={async ({ body, phone, conversationId: targetConversationId }) => {
+                  const response = await fetch("/api/messages/send", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      body,
+                      phone: targetConversationId ? defaultPhone : phone,
+                      conversationId: targetConversationId,
+                    }),
+                  });
 
-      <section className="grid flex-1 grid-cols-[1fr_320px] gap-4">
-        <div className="flex min-h-0 flex-col gap-3">
-          <ConversationHeader
-            conversationId={activeConversation?.id}
-            contactName={activeConversation?.contact.name}
-            phone={isNewConversation ? undefined : activeConversation?.contact.phone}
-            facility={activeConversation?.contact.facility}
-            status={activeConversation?.status}
-            onStatusChange={async (status) => {
-              if (!activeConversation) return;
-              await fetch(`/api/conversations/${activeConversation.id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status }),
-              });
-              await loadConversationDetail(activeConversation.id);
-              await loadConversations();
-            }}
+                  if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error ?? "Failed to send message.");
+                  }
+
+                  const data = await response.json();
+                  setConversationId(data.conversationId);
+                  setIsNewConversation(false);
+                  await loadConversations();
+                  await loadConversationDetail(data.conversationId);
+                }}
+              />
+              <ContactDetailsCard contact={activeConversation?.contact} />
+              <InternalNotesPanel
+                conversationId={activeConversation?.id}
+                notes={activeConversation?.notes ?? []}
+                onCreated={(newNote) => {
+                  if (!activeConversation) return;
+                  setActiveConversation({
+                    ...activeConversation,
+                    notes: [newNote, ...activeConversation.notes],
+                  });
+                }}
+              />
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="hidden h-[calc(100dvh-5rem)] gap-4 lg:flex">
+        <aside className="flex w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+            placeholder="Search name, phone, or facility"
           />
-          <div className="min-h-0 flex-1">
-            <MessageThread messages={activeConversation?.messages ?? []} />
-          </div>
-          <MessageComposer
-            templates={templates}
-            conversationId={isNewConversation ? undefined : activeConversation?.id}
-            defaultPhone={defaultPhone}
-            onSend={async ({ body, phone, conversationId: targetConversationId }) => {
-              const response = await fetch("/api/messages/send", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  body,
-                  phone: targetConversationId ? defaultPhone : phone,
-                  conversationId: targetConversationId,
-                }),
-              });
-
-              if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error ?? "Failed to send message.");
-              }
-
-              const data = await response.json();
-              setConversationId(data.conversationId);
+          <button
+            className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
+            onClick={() => {
+              setIsNewConversation(true);
+              setConversationId(null);
+            }}
+          >
+            New Conversation
+          </button>
+          <ConversationList
+            conversations={conversations}
+            selectedConversationId={conversationId ?? undefined}
+            onSelect={(id) => {
+              setConversationId(id);
               setIsNewConversation(false);
-              await loadConversations();
-              await loadConversationDetail(data.conversationId);
             }}
           />
-        </div>
+        </aside>
 
-        <div className="space-y-3">
-          <ContactDetailsCard contact={activeConversation?.contact} />
-          <InternalNotesPanel
-            conversationId={activeConversation?.id}
-            notes={activeConversation?.notes ?? []}
-            onCreated={(newNote) => {
-              if (!activeConversation) return;
-              setActiveConversation({
-                ...activeConversation,
-                notes: [newNote, ...activeConversation.notes],
-              });
-            }}
-          />
-        </div>
-      </section>
-    </div>
+        <section className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4">
+          <div className="flex min-h-0 min-w-0 flex-col gap-3">
+            <ConversationHeader
+              conversationId={activeConversation?.id}
+              contactName={activeConversation?.contact.name}
+              phone={isNewConversation ? undefined : activeConversation?.contact.phone}
+              facility={activeConversation?.contact.facility}
+              status={activeConversation?.status}
+              onStatusChange={async (status) => {
+                if (!activeConversation) return;
+                await fetch(`/api/conversations/${activeConversation.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ status }),
+                });
+                await loadConversationDetail(activeConversation.id);
+                await loadConversations();
+              }}
+            />
+            <div className="min-h-0 flex-1">
+              <MessageThread messages={activeConversation?.messages ?? []} />
+            </div>
+            <MessageComposer
+              templates={templates}
+              conversationId={isNewConversation ? undefined : activeConversation?.id}
+              defaultPhone={defaultPhone}
+              onSend={async ({ body, phone, conversationId: targetConversationId }) => {
+                const response = await fetch("/api/messages/send", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    body,
+                    phone: targetConversationId ? defaultPhone : phone,
+                    conversationId: targetConversationId,
+                  }),
+                });
+
+                if (!response.ok) {
+                  const errorData = await response.json();
+                  throw new Error(errorData.error ?? "Failed to send message.");
+                }
+
+                const data = await response.json();
+                setConversationId(data.conversationId);
+                setIsNewConversation(false);
+                await loadConversations();
+                await loadConversationDetail(data.conversationId);
+              }}
+            />
+          </div>
+
+          <div className="space-y-3">
+            <ContactDetailsCard contact={activeConversation?.contact} />
+            <InternalNotesPanel
+              conversationId={activeConversation?.id}
+              notes={activeConversation?.notes ?? []}
+              onCreated={(newNote) => {
+                if (!activeConversation) return;
+                setActiveConversation({
+                  ...activeConversation,
+                  notes: [newNote, ...activeConversation.notes],
+                });
+              }}
+            />
+          </div>
+        </section>
+      </div>
+    </>
   );
 }

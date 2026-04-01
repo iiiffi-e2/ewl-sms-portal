@@ -37,14 +37,14 @@ export function InternalNotesPanel({ conversationId, notes, onCreated }: Interna
       {conversationId ? (
         <>
           <textarea
-            className="h-20 w-full rounded-lg border border-border px-3 py-2 text-sm"
+            className="h-20 w-full rounded-lg border border-border px-3 py-2.5 text-sm"
             value={body}
             onChange={(event) => setBody(event.target.value)}
             placeholder="Add internal note..."
           />
           <button
             disabled={saving}
-            className="rounded-lg border border-border px-3 py-2 text-sm font-semibold"
+            className="w-full rounded-lg border border-border px-3 py-2.5 text-sm font-semibold sm:w-auto"
             onClick={async () => {
               if (!body.trim()) return;
               setSaving(true);

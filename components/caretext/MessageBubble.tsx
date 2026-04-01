@@ -15,7 +15,7 @@ export function MessageBubble({ body, direction, status, createdAt }: MessageBub
     <div className={clsx("flex", outbound ? "justify-end" : "justify-start")}>
       <div
         className={clsx(
-          "max-w-[70%] rounded-2xl px-4 py-2 shadow-sm",
+          "max-w-[85%] rounded-2xl px-4 py-2 shadow-sm sm:max-w-[70%]",
           outbound ? "bg-indigo-600 text-white" : "bg-white border border-border text-foreground",
         )}
       >
