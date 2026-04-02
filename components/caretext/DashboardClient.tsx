@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
 import { MessageThread } from "@/components/caretext/MessageThread";
@@ -28,7 +28,12 @@ type ConversationListResponse = {
       emergencyContactPhone: string | null;
     };
     assignedTo: { id: string; name: string } | null;
-    messages: { body: string }[];
+    messages: {
+      id: string;
+      body: string;
+      direction: "inbound" | "outbound";
+      createdAt: string;
+    }[];
   }>;
 };
 
@@ -65,6 +70,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   const [conversations, setConversations] = useState<ConversationListResponse["conversations"]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+  const seenInboundMessageIdsRef = useRef<Set<string>>(new Set());
+  const hasInitializedInboundSnapshotRef = useRef(false);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
@@ -114,6 +121,67 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
     return () => clearInterval(interval);
   }, [conversationId, loadConversationDetail, loadConversations]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      return;
+    }
+
+    if (Notification.permission !== "default") {
+      return;
+    }
+
+    void Notification.requestPermission();
+  }, []);
+
+  useEffect(() => {
+    const inboundMessages = conversations.flatMap((conversation) =>
+      conversation.messages
+        .filter((message) => message.direction === "inbound")
+        .map((message) => ({
+          ...message,
+          contactName: conversation.contact.name,
+          phone: conversation.contact.phone,
+        })),
+    );
+
+    if (!hasInitializedInboundSnapshotRef.current) {
+      inboundMessages.forEach((message) => {
+        seenInboundMessageIdsRef.current.add(message.id);
+      });
+      hasInitializedInboundSnapshotRef.current = true;
+      return;
+    }
+
+    const unseenInboundMessages = inboundMessages.filter(
+      (message) => !seenInboundMessageIdsRef.current.has(message.id),
+    );
+
+    unseenInboundMessages.forEach((message) => {
+      seenInboundMessageIdsRef.current.add(message.id);
+    });
+
+    if (
+      !unseenInboundMessages.length ||
+      typeof window === "undefined" ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted"
+    ) {
+      return;
+    }
+
+    unseenInboundMessages.forEach((message) => {
+      const sender = message.contactName?.trim() || message.phone;
+      const notification = new Notification(`New SMS from ${sender}`, {
+        body: message.body,
+        tag: `inbound-sms-${message.id}`,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+      };
+    });
+  }, [conversations]);
 
   const defaultPhone = useMemo(() => activeConversation?.contact.phone ?? "", [activeConversation]);
   const showConversationPane = isNewConversation || Boolean(conversationId);
