@@ -34,6 +34,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
 
+  if (conversation.archivedAt) {
+    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
   return NextResponse.json({ conversation });
 }
 
@@ -58,6 +62,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Only admins can assign conversations." }, { status: 403 });
   }
 
+  const existingConversation = await prisma.conversation.findUnique({
+    where: { id },
+    select: { id: true, archivedAt: true },
+  });
+
+  if (!existingConversation || existingConversation.archivedAt) {
+    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
   const conversation = await prisma.conversation.update({
     where: { id },
     data: {
@@ -78,14 +91,17 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params;
   const existingConversation = await prisma.conversation.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, archivedAt: true },
   });
 
-  if (!existingConversation) {
+  if (!existingConversation || existingConversation.archivedAt) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
 
-  await prisma.conversation.delete({ where: { id } });
+  await prisma.conversation.update({
+    where: { id },
+    data: { archivedAt: new Date() },
+  });
 
   return NextResponse.json({ ok: true });
 }

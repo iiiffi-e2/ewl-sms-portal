@@ -32,7 +32,11 @@ export async function POST(request: Request) {
   });
 
   let conversation = await prisma.conversation.findFirst({
-    where: { contactId: contact.id, status: { not: ConversationStatus.closed } },
+    where: {
+      contactId: contact.id,
+      status: { not: ConversationStatus.closed },
+      archivedAt: null,
+    },
     orderBy: { lastMessageAt: "desc" },
   });
 

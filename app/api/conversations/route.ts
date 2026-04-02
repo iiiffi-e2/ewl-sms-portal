@@ -12,15 +12,18 @@ export async function GET(request: Request) {
   const query = searchParams.get("q")?.trim();
 
   const conversations = await prisma.conversation.findMany({
-    where: query
-      ? {
-          OR: [
-            { contact: { name: { contains: query, mode: "insensitive" } } },
-            { contact: { phone: { contains: query, mode: "insensitive" } } },
-            { contact: { facility: { contains: query, mode: "insensitive" } } },
-          ],
-        }
-      : undefined,
+    where: {
+      archivedAt: null,
+      ...(query
+        ? {
+            OR: [
+              { contact: { name: { contains: query, mode: "insensitive" } } },
+              { contact: { phone: { contains: query, mode: "insensitive" } } },
+              { contact: { facility: { contains: query, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { lastMessageAt: "desc" },
     include: {
       contact: true,
