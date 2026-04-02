@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type ContactDetailsCardProps = {
   contact?: {
@@ -34,21 +34,30 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const lastContactIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!contact) {
       return;
     }
-    setForm({
-      name: contact.name ?? "",
-      phone: contact.phone,
-      facility: contact.facility ?? "",
-      address: contact.address ?? "",
-    });
-    setError(null);
-    setSuccess(null);
-    setIsEditing(false);
-  }, [contact]);
+    const didContactChange = lastContactIdRef.current !== contact.id;
+    lastContactIdRef.current = contact.id;
+
+    if (didContactChange || !isEditing) {
+      setForm({
+        name: contact.name ?? "",
+        phone: contact.phone,
+        facility: contact.facility ?? "",
+        address: contact.address ?? "",
+      });
+    }
+
+    if (didContactChange) {
+      setError(null);
+      setSuccess(null);
+      setIsEditing(false);
+    }
+  }, [contact, isEditing]);
 
   if (!contact) {
     return null;
