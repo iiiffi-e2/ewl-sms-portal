@@ -249,7 +249,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 }}
               />
               <div className="min-h-0 h-[40dvh]">
-                <MessageThread messages={activeConversation?.messages ?? []} />
+                <MessageThread
+                  messages={activeConversation?.messages ?? []}
+                  conversationId={activeConversation?.id}
+                />
               </div>
               <MessageComposer
                 templates={templates}
@@ -349,7 +352,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               }}
             />
             <div className="min-h-0 flex-1">
-              <MessageThread messages={activeConversation?.messages ?? []} />
+              <MessageThread
+                messages={activeConversation?.messages ?? []}
+                conversationId={activeConversation?.id}
+              />
             </div>
             <MessageComposer
               templates={templates}
