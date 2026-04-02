@@ -77,11 +77,6 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Demo Credentials
-
-- Admin: `admin@example.com` / `password123`
-- Nurse: `nurse@example.com` / `password123`
-
 ## Twilio Webhook Configuration
 
 Configure your Twilio phone number webhooks:
