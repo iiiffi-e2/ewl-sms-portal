@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
 import { MessageThread } from "@/components/caretext/MessageThread";
@@ -68,6 +69,7 @@ type ConversationDetail = {
 };
 
 export function DashboardClient({ initialConversationId }: { initialConversationId?: string }) {
+  const { data: session } = useSession();
   const [search, setSearch] = useState("");
   const [isNewConversation, setIsNewConversation] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null);
@@ -189,6 +191,27 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
   const defaultPhone = useMemo(() => activeConversation?.contact.phone ?? "", [activeConversation]);
   const showConversationPane = isNewConversation || Boolean(conversationId);
+  const isAdmin = session?.user.role === "admin";
+
+  const handleDeleteConversation = useCallback(async () => {
+    if (!activeConversation) {
+      return;
+    }
+
+    const response = await fetch(`/api/conversations/${activeConversation.id}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.error ?? "Failed to delete conversation.");
+    }
+
+    setActiveConversation(null);
+    setConversationId(null);
+    setIsNewConversation(false);
+    await loadConversations();
+  }, [activeConversation, loadConversations]);
 
   return (
     <>
@@ -237,6 +260,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 phone={isNewConversation ? undefined : activeConversation?.contact.phone}
                 facility={activeConversation?.contact.facility}
                 status={activeConversation?.status}
+                isAdmin={isAdmin}
                 onStatusChange={async (status) => {
                   if (!activeConversation) return;
                   await fetch(`/api/conversations/${activeConversation.id}`, {
@@ -247,6 +271,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   await loadConversationDetail(activeConversation.id);
                   await loadConversations();
                 }}
+                onDeleteConversation={handleDeleteConversation}
               />
               <div className="min-h-0 h-[40dvh]">
                 <MessageThread
@@ -340,6 +365,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               phone={isNewConversation ? undefined : activeConversation?.contact.phone}
               facility={activeConversation?.contact.facility}
               status={activeConversation?.status}
+              isAdmin={isAdmin}
               onStatusChange={async (status) => {
                 if (!activeConversation) return;
                 await fetch(`/api/conversations/${activeConversation.id}`, {
@@ -350,6 +376,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 await loadConversationDetail(activeConversation.id);
                 await loadConversations();
               }}
+              onDeleteConversation={handleDeleteConversation}
             />
             <div className="min-h-0 flex-1">
               <MessageThread

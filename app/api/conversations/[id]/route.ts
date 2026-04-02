@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/api-auth";
+import { requireAdmin, requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { parseConversationStatus } from "@/lib/status";
 import { updateConversationSchema } from "@/lib/validators";
@@ -67,4 +67,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   });
 
   return NextResponse.json({ conversation });
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const authResult = await requireAdmin();
+  if ("error" in authResult) {
+    return authResult.error;
+  }
+
+  const { id } = await params;
+  const existingConversation = await prisma.conversation.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!existingConversation) {
+    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
+  await prisma.conversation.delete({ where: { id } });
+
+  return NextResponse.json({ ok: true });
 }
