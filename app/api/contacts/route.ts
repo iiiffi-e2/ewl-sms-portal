@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       name: parsed.data.name ?? null,
       phone: normalizePhoneNumber(parsed.data.phone),
       facility: parsed.data.facility ?? null,
+      address: parsed.data.address ?? null,
       notes: parsed.data.notes ?? null,
       emergencyContactName: parsed.data.emergencyContactName ?? null,
       emergencyContactPhone: parsed.data.emergencyContactPhone

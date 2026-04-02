@@ -20,9 +20,11 @@ type ConversationListResponse = {
     status: string;
     lastMessageAt: string;
     contact: {
+      id: string;
       name: string | null;
       phone: string;
       facility: string | null;
+      address: string | null;
       notes: string | null;
       emergencyContactName: string | null;
       emergencyContactPhone: string | null;
@@ -36,9 +38,11 @@ type ConversationDetail = {
   id: string;
   status: string;
   contact: {
+    id: string;
     name: string | null;
     phone: string;
     facility: string | null;
+    address: string | null;
     notes: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
@@ -206,7 +210,14 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   await loadConversationDetail(data.conversationId);
                 }}
               />
-              <ContactDetailsCard contact={activeConversation?.contact} />
+              <ContactDetailsCard
+                contact={activeConversation?.contact}
+                onUpdated={async () => {
+                  if (!activeConversation) return;
+                  await loadConversationDetail(activeConversation.id);
+                  await loadConversations();
+                }}
+              />
               <InternalNotesPanel
                 conversationId={activeConversation?.id}
                 notes={activeConversation?.notes ?? []}
@@ -302,7 +313,14 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           </div>
 
           <div className="space-y-3">
-            <ContactDetailsCard contact={activeConversation?.contact} />
+            <ContactDetailsCard
+              contact={activeConversation?.contact}
+              onUpdated={async () => {
+                if (!activeConversation) return;
+                await loadConversationDetail(activeConversation.id);
+                await loadConversations();
+              }}
+            />
             <InternalNotesPanel
               conversationId={activeConversation?.id}
               notes={activeConversation?.notes ?? []}

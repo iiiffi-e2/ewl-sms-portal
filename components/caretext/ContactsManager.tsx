@@ -7,6 +7,7 @@ type Contact = {
   name: string | null;
   phone: string;
   facility: string | null;
+  address: string | null;
   notes: string | null;
 };
 
@@ -41,6 +42,7 @@ export function ContactsManager() {
             <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
             <p className="text-sm text-muted">{contact.phone}</p>
             <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
+            <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
             {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
           </div>
         ))}

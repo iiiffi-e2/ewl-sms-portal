@@ -81,22 +81,24 @@ async function main() {
 
   const contactA = await prisma.contact.upsert({
     where: { phone: "+15551230001" },
-    update: { name: "Martha Jones", facility: "Sunrise Senior Living" },
+    update: { name: "Martha Jones", facility: "Sunrise Senior Living", address: "1200 Elm St, Springfield, IL 62701" },
     create: {
       name: "Martha Jones",
       phone: "+15551230001",
       facility: "Sunrise Senior Living",
+      address: "1200 Elm St, Springfield, IL 62701",
       notes: "Prefers evening follow-up.",
     },
   });
 
   const contactB = await prisma.contact.upsert({
     where: { phone: "+15551230002" },
-    update: { name: "Robert Lee", facility: "Maple Grove Care Center" },
+    update: { name: "Robert Lee", facility: "Maple Grove Care Center", address: "88 River Rd, Dayton, OH 45402" },
     create: {
       name: "Robert Lee",
       phone: "+15551230002",
       facility: "Maple Grove Care Center",
+      address: "88 River Rd, Dayton, OH 45402",
       notes: "Uses hearing aid, text slowly.",
     },
   });

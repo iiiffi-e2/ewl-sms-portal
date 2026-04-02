@@ -17,16 +17,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const { id } = await params;
+  const hasField = <T extends object>(field: keyof T) =>
+    Object.prototype.hasOwnProperty.call(payload, field as string);
   const contact = await prisma.contact.update({
     where: { id },
     data: {
-      name: parsed.data.name ?? undefined,
-      phone: parsed.data.phone ? normalizePhoneNumber(parsed.data.phone) : undefined,
-      facility: parsed.data.facility ?? undefined,
-      notes: parsed.data.notes ?? undefined,
-      emergencyContactName: parsed.data.emergencyContactName ?? undefined,
-      emergencyContactPhone: parsed.data.emergencyContactPhone
-        ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
+      name: hasField<typeof parsed.data>("name") ? (parsed.data.name ?? null) : undefined,
+      phone: hasField<typeof parsed.data>("phone")
+        ? parsed.data.phone
+          ? normalizePhoneNumber(parsed.data.phone)
+          : undefined
+        : undefined,
+      facility: hasField<typeof parsed.data>("facility") ? (parsed.data.facility ?? null) : undefined,
+      address: hasField<typeof parsed.data>("address") ? (parsed.data.address ?? null) : undefined,
+      notes: hasField<typeof parsed.data>("notes") ? (parsed.data.notes ?? null) : undefined,
+      emergencyContactName: hasField<typeof parsed.data>("emergencyContactName")
+        ? (parsed.data.emergencyContactName ?? null)
+        : undefined,
+      emergencyContactPhone: hasField<typeof parsed.data>("emergencyContactPhone")
+        ? parsed.data.emergencyContactPhone
+          ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
+          : null
         : undefined,
     },
   });

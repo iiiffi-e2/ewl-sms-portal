@@ -13,6 +13,7 @@ export const createContactSchema = z.object({
   name: z.string().trim().min(1).max(120).optional().nullable(),
   phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),
   facility: z.string().trim().max(120).optional().nullable(),
+  address: z.string().trim().max(240).optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
   emergencyContactName: z.string().trim().max(120).optional().nullable(),
   emergencyContactPhone: z.string().trim().max(30).optional().nullable(),

@@ -53,6 +53,7 @@ model Contact {
   name                  String?
   phone                 String         @unique
   facility              String?
+  address               String?
   notes                 String?
   emergencyContactName  String?
   emergencyContactPhone String?
