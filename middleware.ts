@@ -41,5 +41,6 @@ export const config = {
     "/api/contacts/:path*",
     "/api/templates/:path*",
     "/api/calls/:path*",
+    "/api/voice/:path*",
   ],
 };

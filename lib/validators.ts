@@ -34,3 +34,12 @@ export const createTemplateSchema = z.object({
 export const createNoteSchema = z.object({
   body: z.string().trim().min(1).max(2000),
 });
+
+export const initiateCallSchema = z.object({
+  conversationId: z.string().uuid(),
+  phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),
+});
+
+export const updateCallLogSchema = z.object({
+  status: z.enum(["canceled", "failed"]),
+});
