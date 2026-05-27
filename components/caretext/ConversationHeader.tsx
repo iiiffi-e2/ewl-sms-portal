@@ -32,6 +32,7 @@ export function ConversationHeader({
   const [deleteConfirmationValue, setDeleteConfirmationValue] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const isStartingCall = callPhase === "connecting";
 
@@ -45,9 +46,38 @@ export function ConversationHeader({
 
   return (
     <>
-      <div className="rounded-xl border border-border bg-white p-4">
+      <div className="relative rounded-xl border border-border bg-white p-4">
+        {isAdmin && conversationId && onDeleteConversation ? (
+          <div className="absolute right-3 top-3">
+            <button
+              type="button"
+              aria-label="Thread options"
+              aria-expanded={isOptionsOpen}
+              className="rounded-md px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              onClick={() => setIsOptionsOpen((open) => !open)}
+            >
+              ···
+            </button>
+            {isOptionsOpen ? (
+              <div className="absolute right-0 z-10 mt-1 w-36 rounded-lg border border-border bg-white py-1 shadow-md">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                  onClick={() => {
+                    setIsOptionsOpen(false);
+                    setDeleteError(null);
+                    setDeleteConfirmationValue("");
+                    setIsDeleteModalOpen(true);
+                  }}
+                >
+                  Delete thread
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div className={`min-w-0 ${isAdmin && conversationId && onDeleteConversation ? "pr-8" : ""}`}>
             <p className="text-lg font-semibold">{contactName || phone}</p>
             <p className="text-sm text-muted">{phone}</p>
             {facility ? <p className="text-sm text-muted">Facility: {facility}</p> : null}
@@ -75,23 +105,10 @@ export function ConversationHeader({
                 ))}
               </select>
             ) : null}
-            {isAdmin && conversationId && onDeleteConversation ? (
-              <button
-                type="button"
-                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700"
-                onClick={() => {
-                  setDeleteError(null);
-                  setDeleteConfirmationValue("");
-                  setIsDeleteModalOpen(true);
-                }}
-              >
-                Delete thread
-              </button>
-            ) : null}
             <button
               type="button"
               disabled={!conversationId || isCallActive || isStartingCall}
-              className="ml-auto rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
+              className="ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
               onClick={async () => {
                 if (!conversationId || !phone) return;
                 await startCall({ conversationId, phone, contactName });
