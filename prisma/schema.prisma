@@ -34,12 +34,34 @@ enum MessageStatus {
   received
 }
 
+enum CallDirection {
+  outbound
+  inbound
+}
+
+enum CallMode {
+  browser
+  phone
+}
+
+enum CallStatus {
+  initiating
+  ringing
+  in_progress
+  completed
+  failed
+  no_answer
+  busy
+  canceled
+}
+
 model User {
   id                    String         @id @default(uuid())
   name                  String
   email                 String         @unique
   passwordHash          String
   role                  UserRole       @default(nurse)
+  phoneNumber           String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   assignedConversations Conversation[] @relation("ConversationAssignee")
@@ -120,22 +142,29 @@ model Template {
 }
 
 model CallLog {
-  id            String        @id @default(uuid())
-  conversationId String?
-  phone         String
-  initiatedById String?
-  twilioSid     String?
-  startedAt     DateTime      @default(now())
-  endedAt       DateTime?
-  outcome       String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  conversation  Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  initiatedBy   User?         @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+  id              String        @id @default(uuid())
+  conversationId  String?
+  phone           String
+  initiatedById   String?
+  twilioSid       String?
+  direction       CallDirection @default(outbound)
+  mode            CallMode      @default(browser)
+  status          CallStatus    @default(initiating)
+  durationSeconds Int?
+  recordingSid    String?
+  recordingUrl    String?
+  startedAt       DateTime      @default(now())
+  endedAt         DateTime?
+  outcome         String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  initiatedBy     User?         @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
 
   @@index([conversationId])
   @@index([initiatedById])
   @@index([phone])
+  @@index([status])
 }
 
 model InternalNote {
