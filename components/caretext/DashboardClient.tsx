@@ -8,6 +8,8 @@ import { MessageThread } from "@/components/caretext/MessageThread";
 import { MessageComposer } from "@/components/caretext/MessageComposer";
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
+import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
+import { CallBar } from "@/components/caretext/CallBar";
 
 type Template = {
   id: string;
@@ -214,7 +216,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   }, [activeConversation, loadConversations]);
 
   return (
-    <>
+    <VoiceCallProvider>
       <div className="flex h-[calc(100dvh-5rem)] flex-col gap-3 lg:hidden">
         {!showConversationPane ? (
           <aside className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
@@ -273,6 +275,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 }}
                 onDeleteConversation={handleDeleteConversation}
               />
+              <CallBar />
               <div className="min-h-0 h-[40dvh]">
                 <MessageThread
                   messages={activeConversation?.messages ?? []}
@@ -378,6 +381,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               }}
               onDeleteConversation={handleDeleteConversation}
             />
+            <CallBar />
             <div className="min-h-0 flex-1">
               <MessageThread
                 messages={activeConversation?.messages ?? []}
@@ -436,6 +440,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           </div>
         </section>
       </div>
-    </>
+    </VoiceCallProvider>
   );
 }

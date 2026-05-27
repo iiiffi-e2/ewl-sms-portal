@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { StatusBadge } from "@/components/caretext/StatusBadge";
+import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
 
 type ConversationHeaderProps = {
   conversationId?: string;
@@ -31,6 +32,8 @@ export function ConversationHeader({
   const [deleteConfirmationValue, setDeleteConfirmationValue] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
+  const isStartingCall = callPhase === "connecting";
 
   if (!phone) {
     return (
@@ -85,21 +88,18 @@ export function ConversationHeader({
                 Delete thread
               </button>
             ) : null}
-            <a
-              href={`tel:${phone}`}
-              className="ml-auto rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white sm:ml-0"
+            <button
+              type="button"
+              disabled={!conversationId || isCallActive || isStartingCall}
+              className="ml-auto rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
               onClick={async () => {
-                if (conversationId) {
-                  await fetch("/api/calls/log", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ conversationId, phone }),
-                  });
-                }
+                if (!conversationId || !phone) return;
+                await startCall({ conversationId, phone, contactName });
               }}
             >
-              Call
-            </a>
+              {isStartingCall ? "Calling..." : "Call"}
+            </button>
+            {errorMessage ? <p className="w-full text-xs text-rose-600">{errorMessage}</p> : null}
           </div>
         </div>
       </div>
