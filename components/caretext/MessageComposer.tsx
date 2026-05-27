@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TemplateSelector } from "@/components/caretext/TemplateSelector";
 
 type Template = {
@@ -13,6 +13,7 @@ type MessageComposerProps = {
   templates: Template[];
   conversationId?: string;
   defaultPhone?: string;
+  onPhoneChange?: (phone: string) => void;
   onSend: (payload: { body: string; phone: string; conversationId?: string }) => Promise<void>;
 };
 
@@ -20,6 +21,7 @@ export function MessageComposer({
   templates,
   conversationId,
   defaultPhone,
+  onPhoneChange,
   onSend,
 }: MessageComposerProps) {
   const [body, setBody] = useState("");
@@ -27,12 +29,21 @@ export function MessageComposer({
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (defaultPhone !== undefined) {
+      setPhone(defaultPhone);
+    }
+  }, [defaultPhone]);
+
   return (
     <div className="space-y-2 rounded-xl border border-border bg-white p-4">
       {!conversationId && (
         <input
           value={phone}
-          onChange={(event) => setPhone(event.target.value)}
+          onChange={(event) => {
+            setPhone(event.target.value);
+            onPhoneChange?.(event.target.value);
+          }}
           placeholder="Recipient phone number"
           className="w-full rounded-lg border border-border px-3 py-2.5 text-sm"
         />

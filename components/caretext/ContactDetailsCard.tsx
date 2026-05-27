@@ -2,44 +2,67 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type ContactDetailsCardProps = {
-  contact?: {
-    id: string;
-    name: string | null;
-    phone: string;
-    facility: string | null;
-    address: string | null;
-    notes: string | null;
-    emergencyContactName: string | null;
-    emergencyContactPhone: string | null;
-  };
-  onUpdated?: () => Promise<void> | void;
+type Contact = {
+  id: string;
+  name: string | null;
+  phone: string;
+  facility: string | null;
+  address: string | null;
+  notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
 };
 
-type FormState = {
+type ContactFormState = {
   name: string;
   phone: string;
   facility: string;
   address: string;
 };
 
-export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardProps) {
-  const [form, setForm] = useState<FormState>({
+type ContactDetailsCardProps = {
+  contact?: Contact;
+  isDraft?: boolean;
+  draftPhone?: string;
+  onDraftPhoneChange?: (phone: string) => void;
+  onCreate?: (payload: ContactFormState) => Promise<void> | void;
+  onUpdated?: () => Promise<void> | void;
+};
+
+export function ContactDetailsCard({
+  contact,
+  isDraft = false,
+  draftPhone = "",
+  onDraftPhoneChange,
+  onCreate,
+  onUpdated,
+}: ContactDetailsCardProps) {
+  const [form, setForm] = useState<ContactFormState>({
     name: "",
-    phone: "",
+    phone: draftPhone,
     facility: "",
     address: "",
   });
   const [isSaving, setIsSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(isDraft);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const lastContactIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (isDraft && !contact) {
+      setForm((current) => ({
+        ...current,
+        phone: draftPhone,
+      }));
+      setIsEditing(true);
+      return;
+    }
+
     if (!contact) {
       return;
     }
+
     const didContactChange = lastContactIdRef.current !== contact.id;
     lastContactIdRef.current = contact.id;
 
@@ -57,22 +80,32 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
       setSuccess(null);
       setIsEditing(false);
     }
-  }, [contact, isEditing]);
+  }, [contact, draftPhone, isDraft, isEditing]);
 
-  if (!contact) {
+  if (!contact && !isDraft) {
     return null;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!contact) {
-      return;
-    }
     setIsSaving(true);
     setError(null);
     setSuccess(null);
 
     try {
+      if (isDraft && !contact) {
+        if (!onCreate) {
+          throw new Error("Unable to create conversation.");
+        }
+        await onCreate(form);
+        setSuccess("Conversation saved.");
+        return;
+      }
+
+      if (!contact) {
+        return;
+      }
+
       const response = await fetch(`/api/contacts/${contact.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -95,46 +128,68 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
         await onUpdated();
       }
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Failed to update contact details.");
+      setError(submissionError instanceof Error ? submissionError.message : "Failed to save contact details.");
     } finally {
       setIsSaving(false);
     }
   }
 
+  function updateForm(next: Partial<ContactFormState>) {
+    setForm((current) => {
+      const updated = { ...current, ...next };
+      if (next.phone !== undefined && onDraftPhoneChange) {
+        onDraftPhoneChange(next.phone);
+      }
+      return updated;
+    });
+  }
+
+  const isDraftMode = isDraft && !contact;
+
   return (
     <div className="rounded-xl border border-border bg-white p-4 text-sm">
       <div className="flex items-center justify-between">
         <p className="font-semibold">Contact Details</p>
-        <button
-          type="button"
-          className="rounded-md border border-border px-3 py-1 text-xs font-medium"
-          onClick={() => {
-            if (isEditing) {
-              setForm({
-                name: contact.name ?? "",
-                phone: contact.phone,
-                facility: contact.facility ?? "",
-                address: contact.address ?? "",
-              });
-              setError(null);
+        {!isDraftMode ? (
+          <button
+            type="button"
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium"
+            onClick={() => {
+              if (!contact) {
+                return;
+              }
+              if (isEditing) {
+                setForm({
+                  name: contact.name ?? "",
+                  phone: contact.phone,
+                  facility: contact.facility ?? "",
+                  address: contact.address ?? "",
+                });
+                setError(null);
+                setSuccess(null);
+                setIsEditing(false);
+                return;
+              }
               setSuccess(null);
-              setIsEditing(false);
-              return;
-            }
-            setSuccess(null);
-            setIsEditing(true);
-          }}
-        >
-          {isEditing ? "Cancel" : "Edit"}
-        </button>
+              setIsEditing(true);
+            }}
+          >
+            {isEditing ? "Cancel" : "Edit"}
+          </button>
+        ) : null}
       </div>
+      {isDraftMode ? (
+        <p className="mt-1 text-xs text-muted">
+          Enter contact details and save to create this conversation before sending an SMS.
+        </p>
+      ) : null}
       <form className="mt-3 space-y-3" onSubmit={handleSubmit}>
         <label className="block">
           <span className="text-xs font-medium text-muted">Contact name</span>
           <input
             className="mt-1 w-full rounded-lg border border-border px-3 py-2"
             value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            onChange={(event) => updateForm({ name: event.target.value })}
             placeholder="Contact name"
             readOnly={!isEditing}
           />
@@ -144,7 +199,7 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
           <input
             className="mt-1 w-full rounded-lg border border-border px-3 py-2"
             value={form.facility}
-            onChange={(event) => setForm((current) => ({ ...current, facility: event.target.value }))}
+            onChange={(event) => updateForm({ facility: event.target.value })}
             placeholder="Facility name"
             readOnly={!isEditing}
           />
@@ -154,7 +209,7 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
           <input
             className="mt-1 w-full rounded-lg border border-border px-3 py-2"
             value={form.phone}
-            onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
+            onChange={(event) => updateForm({ phone: event.target.value })}
             placeholder="+15551234567"
             required
             readOnly={!isEditing}
@@ -165,7 +220,7 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
           <textarea
             className="mt-1 min-h-20 w-full rounded-lg border border-border px-3 py-2"
             value={form.address}
-            onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
+            onChange={(event) => updateForm({ address: event.target.value })}
             placeholder="Address"
             readOnly={!isEditing}
           />
@@ -178,7 +233,11 @@ export function ContactDetailsCard({ contact, onUpdated }: ContactDetailsCardPro
             disabled={isSaving}
             className="w-full rounded-lg bg-indigo-600 px-3 py-2 font-semibold text-white disabled:opacity-60"
           >
-            {isSaving ? "Saving..." : "Save Contact Details"}
+            {isSaving
+              ? "Saving..."
+              : isDraftMode
+                ? "Save Conversation"
+                : "Save Contact Details"}
           </button>
         ) : null}
       </form>

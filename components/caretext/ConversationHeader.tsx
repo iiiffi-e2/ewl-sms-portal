@@ -10,6 +10,7 @@ type ConversationHeaderProps = {
   phone?: string;
   facility?: string | null;
   status?: string;
+  isDraft?: boolean;
   onStatusChange?: (status: string) => Promise<void>;
   isAdmin?: boolean;
   onDeleteConversation?: () => Promise<void>;
@@ -23,6 +24,7 @@ export function ConversationHeader({
   phone,
   facility,
   status,
+  isDraft,
   onStatusChange,
   isAdmin,
   onDeleteConversation,
@@ -39,7 +41,12 @@ export function ConversationHeader({
   if (!phone) {
     return (
       <div className="rounded-xl border border-border bg-white p-4">
-        <p className="text-sm text-muted">Start a new conversation to see details.</p>
+        <p className="text-lg font-semibold">{isDraft ? "New Conversation" : "Conversation"}</p>
+        <p className="text-sm text-muted">
+          {isDraft
+            ? "Add contact details below and save to create this conversation."
+            : "Start a new conversation to see details."}
+        </p>
       </div>
     );
   }

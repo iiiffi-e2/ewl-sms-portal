@@ -85,6 +85,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   const { data: session } = useSession();
   const [search, setSearch] = useState("");
   const [isNewConversation, setIsNewConversation] = useState(false);
+  const [draftPhone, setDraftPhone] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null);
   const [conversations, setConversations] = useState<ConversationListResponse["conversations"]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -202,9 +203,49 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     });
   }, [conversations]);
 
-  const defaultPhone = useMemo(() => activeConversation?.contact.phone ?? "", [activeConversation]);
+  const defaultPhone = useMemo(
+    () => activeConversation?.contact.phone ?? draftPhone,
+    [activeConversation, draftPhone],
+  );
   const showConversationPane = isNewConversation || Boolean(conversationId);
+  const isDraftConversation = isNewConversation && !activeConversation;
   const isAdmin = session?.user.role === "admin";
+
+  const handleCreateConversation = useCallback(
+    async (payload: { name: string; phone: string; facility: string; address: string }) => {
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: payload.name.trim() ? payload.name.trim() : null,
+          phone: payload.phone.trim(),
+          facility: payload.facility.trim() ? payload.facility.trim() : null,
+          address: payload.address.trim() ? payload.address.trim() : null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const formErrors = errorData.error?.fieldErrors;
+        const firstFieldError = formErrors
+          ? Object.values(formErrors).flat().find((message) => typeof message === "string")
+          : null;
+        throw new Error(
+          (typeof firstFieldError === "string" ? firstFieldError : null) ??
+            errorData.error?.formErrors?.[0] ??
+            "Failed to save conversation.",
+        );
+      }
+
+      const data = await response.json();
+      setConversationId(data.conversation.id);
+      setIsNewConversation(false);
+      setDraftPhone("");
+      setActiveConversation(data.conversation);
+      await loadConversations();
+    },
+    [loadConversations],
+  );
 
   const handleDeleteConversation = useCallback(async () => {
     if (!activeConversation) {
@@ -242,6 +283,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               onClick={() => {
                 setIsNewConversation(true);
                 setConversationId(null);
+                setDraftPhone("");
+                setActiveConversation(null);
               }}
             >
               New Conversation
@@ -252,6 +295,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               onSelect={(id) => {
                 setConversationId(id);
                 setIsNewConversation(false);
+                setDraftPhone("");
               }}
             />
           </aside>
@@ -262,6 +306,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               onClick={() => {
                 setConversationId(null);
                 setIsNewConversation(false);
+                setDraftPhone("");
+                setActiveConversation(null);
               }}
             >
               Back to conversations
@@ -270,9 +316,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               <ConversationHeader
                 conversationId={activeConversation?.id}
                 contactName={activeConversation?.contact.name}
-                phone={isNewConversation ? undefined : activeConversation?.contact.phone}
+                phone={activeConversation?.contact.phone}
                 facility={activeConversation?.contact.facility}
                 status={activeConversation?.status}
+                isDraft={isDraftConversation}
                 isAdmin={isAdmin}
                 onStatusChange={async (status) => {
                   if (!activeConversation) return;
@@ -296,8 +343,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               </div>
               <MessageComposer
                 templates={templates}
-                conversationId={isNewConversation ? undefined : activeConversation?.id}
+                conversationId={isDraftConversation ? undefined : activeConversation?.id}
                 defaultPhone={defaultPhone}
+                onPhoneChange={setDraftPhone}
                 onSend={async ({ body, phone, conversationId: targetConversationId }) => {
                   const response = await fetch("/api/messages/send", {
                     method: "POST",
@@ -323,6 +371,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               />
               <ContactDetailsCard
                 contact={activeConversation?.contact}
+                isDraft={isDraftConversation}
+                draftPhone={draftPhone}
+                onDraftPhoneChange={setDraftPhone}
+                onCreate={handleCreateConversation}
                 onUpdated={async () => {
                   if (!activeConversation) return;
                   await loadConversationDetail(activeConversation.id);
@@ -359,6 +411,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             onClick={() => {
               setIsNewConversation(true);
               setConversationId(null);
+              setDraftPhone("");
+              setActiveConversation(null);
             }}
           >
             New Conversation
@@ -369,6 +423,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             onSelect={(id) => {
               setConversationId(id);
               setIsNewConversation(false);
+              setDraftPhone("");
             }}
           />
         </aside>
@@ -378,9 +433,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <ConversationHeader
               conversationId={activeConversation?.id}
               contactName={activeConversation?.contact.name}
-              phone={isNewConversation ? undefined : activeConversation?.contact.phone}
+              phone={activeConversation?.contact.phone}
               facility={activeConversation?.contact.facility}
               status={activeConversation?.status}
+              isDraft={isDraftConversation}
               isAdmin={isAdmin}
               onStatusChange={async (status) => {
                 if (!activeConversation) return;
@@ -404,8 +460,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             </div>
             <MessageComposer
               templates={templates}
-              conversationId={isNewConversation ? undefined : activeConversation?.id}
+              conversationId={isDraftConversation ? undefined : activeConversation?.id}
               defaultPhone={defaultPhone}
+              onPhoneChange={setDraftPhone}
               onSend={async ({ body, phone, conversationId: targetConversationId }) => {
                 const response = await fetch("/api/messages/send", {
                   method: "POST",
@@ -434,6 +491,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           <div className="space-y-3">
             <ContactDetailsCard
               contact={activeConversation?.contact}
+              isDraft={isDraftConversation}
+              draftPhone={draftPhone}
+              onDraftPhoneChange={setDraftPhone}
+              onCreate={handleCreateConversation}
               onUpdated={async () => {
                 if (!activeConversation) return;
                 await loadConversationDetail(activeConversation.id);
