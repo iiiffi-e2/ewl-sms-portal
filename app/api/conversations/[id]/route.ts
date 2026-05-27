@@ -27,6 +27,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         },
         orderBy: { createdAt: "desc" },
       },
+      callLogs: {
+        orderBy: { startedAt: "desc" },
+        include: {
+          initiatedBy: { select: { id: true, name: true } },
+        },
+      },
     },
   });
 
