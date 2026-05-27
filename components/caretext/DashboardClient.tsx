@@ -8,6 +8,7 @@ import { MessageThread } from "@/components/caretext/MessageThread";
 import { MessageComposer } from "@/components/caretext/MessageComposer";
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
+import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
 
@@ -67,6 +68,16 @@ type ConversationDetail = {
     body: string;
     createdAt: string;
     user: { name: string | null };
+  }>;
+  callLogs: Array<{
+    id: string;
+    phone: string;
+    status: string;
+    durationSeconds: number | null;
+    startedAt: string;
+    endedAt: string | null;
+    outcome: string | null;
+    initiatedBy: { name: string | null } | null;
   }>;
 };
 
@@ -279,6 +290,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               <div className="min-h-0 h-[40dvh]">
                 <MessageThread
                   messages={activeConversation?.messages ?? []}
+                  callLogs={activeConversation?.callLogs ?? []}
                   conversationId={activeConversation?.id}
                 />
               </div>
@@ -328,6 +340,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   });
                 }}
               />
+              <CallLogsPanel callLogs={activeConversation?.callLogs ?? []} />
             </div>
           </section>
         )}
@@ -385,6 +398,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <div className="min-h-0 flex-1">
               <MessageThread
                 messages={activeConversation?.messages ?? []}
+                callLogs={activeConversation?.callLogs ?? []}
                 conversationId={activeConversation?.id}
               />
             </div>
@@ -437,6 +451,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 });
               }}
             />
+            <CallLogsPanel callLogs={activeConversation?.callLogs ?? []} />
           </div>
         </section>
       </div>
