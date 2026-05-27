@@ -1,7 +1,7 @@
 import twilio from "twilio";
 import { getTwilioFromNumber } from "@/lib/twilio";
 
-function getVoiceStatusCallbackUrl() {
+export function getVoiceStatusCallbackUrl() {
   const baseUrl = process.env.NEXTAUTH_URL;
   if (!baseUrl) {
     throw new Error("NEXTAUTH_URL is not configured.");

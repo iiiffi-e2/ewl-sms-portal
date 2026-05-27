@@ -40,13 +40,14 @@ export async function parseTwilioWebhookParams(
 }
 
 export function getWebhookRequestUrl(request: Request): string {
+  const requestUrl = new URL(request.url);
   const forwardedProto = request.headers.get("x-forwarded-proto");
   const forwardedHost = request.headers.get("x-forwarded-host");
   const host = forwardedHost ?? request.headers.get("host");
   const proto = forwardedProto ?? "https";
 
   if (host) {
-    return `${proto}://${host}${new URL(request.url).pathname}`;
+    return `${proto}://${host}${requestUrl.pathname}${requestUrl.search}`;
   }
 
   return request.url;
