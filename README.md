@@ -128,8 +128,22 @@ For local development, use a tunnel service (e.g., ngrok) and point Twilio to th
 - 2 conversations
 - sample messages and one internal note
 
+## Twilio Voice Setup
+
+1. In Twilio Console, create an API Key (Account → API Keys).
+2. Create a TwiML App with Voice Request URL:
+   - `{NEXTAUTH_URL}/api/webhooks/voice/twiml`
+3. Add to `.env`:
+   - `TWILIO_API_KEY_SID`
+   - `TWILIO_API_KEY_SECRET`
+   - `TWILIO_TWIML_APP_SID`
+4. For local development, expose your app via ngrok and set `NEXTAUTH_URL` to the ngrok URL.
+5. Ensure your Twilio phone number has Voice capability enabled.
+
 ## Notes
 
 - Database records are the source of truth for all conversation history.
-- Twilio Voice is not implemented in MVP; call action uses `tel:` links and stores call logs.
+- Twilio Voice browser calling is enabled via the Call button in conversation threads.
+- Requires Twilio API Key, TwiML App, and Voice SDK setup (see Twilio Voice Setup below).
+- Call activity is logged to CallLog; recording and inbound voice are planned for future releases.
 - Polling is used for near-realtime refresh in dashboard views.
