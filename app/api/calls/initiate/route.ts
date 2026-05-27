@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { activeCallWhere, expireStaleActiveCalls } from "@/lib/voice/calls";
 import { initiateCallSchema } from "@/lib/validators";
 
 export async function POST(request: Request) {
@@ -32,11 +33,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Conversation not found for phone." }, { status: 404 });
   }
 
+  await expireStaleActiveCalls(authResult.session.user.id);
+
   const activeCall = await prisma.callLog.findFirst({
-    where: {
-      initiatedById: authResult.session.user.id,
-      status: { in: [CallStatus.initiating, CallStatus.ringing, CallStatus.in_progress] },
-    },
+    where: activeCallWhere(authResult.session.user.id),
     select: { id: true },
   });
 

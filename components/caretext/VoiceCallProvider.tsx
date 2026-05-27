@@ -133,8 +133,11 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
 
   const bindCallEvents = useCallback(
     (call: Call, callLogId: string) => {
+      let wasConnected = false;
+
       call.on("ringing", () => setCallPhase("ringing"));
       call.on("accept", () => {
+        wasConnected = true;
         setCallPhase("connected");
         connectedAtRef.current = Date.now();
         clearTimer();
@@ -144,8 +147,11 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
           }
         }, 1000);
       });
-      call.on("disconnect", () => {
+      call.on("disconnect", async () => {
         setCallPhase("disconnecting");
+        if (!wasConnected) {
+          await cancelCallLog(callLogId);
+        }
         resetCallState();
       });
       call.on("cancel", async () => {
@@ -212,7 +218,6 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to start call.";
         setErrorMessage(message);
-        setCallPhase("error");
         if (callLogId) {
           await cancelCallLog(callLogId);
         }
