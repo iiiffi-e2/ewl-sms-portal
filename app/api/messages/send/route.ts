@@ -2,6 +2,7 @@ import { ConversationStatus, MessageDirection, MessageStatus } from "@prisma/cli
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
+import { evaluateOutboundConsent } from "@/lib/consent";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { sendMessageSchema } from "@/lib/validators";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
       facility: facility ?? null,
     },
   });
+
+  const consentDecision = evaluateOutboundConsent(contact.consentStatus);
+  if (!consentDecision.allowed) {
+    return NextResponse.json(
+      { error: consentDecision.error, code: consentDecision.code },
+      { status: 409 },
+    );
+  }
 
   let conversation = conversationId
     ? await prisma.conversation.findUnique({
