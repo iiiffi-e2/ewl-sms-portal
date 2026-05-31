@@ -1,8 +1,15 @@
-import { ConversationStatus, MessageDirection, MessageStatus } from "@prisma/client";
+import {
+  ConsentEventType,
+  ConsentStatus,
+  ConversationStatus,
+  MessageDirection,
+  MessageStatus,
+} from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { matchStopKeyword } from "@/lib/consent";
 
 export async function POST(request: Request) {
   const payload = await request.formData();
@@ -30,6 +37,21 @@ export async function POST(request: Request) {
     update: {},
     create: { phone: normalizedPhone },
   });
+
+  const stopKeyword = matchStopKeyword(body);
+  if (stopKeyword && contact.consentStatus !== ConsentStatus.opted_out) {
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { consentStatus: ConsentStatus.opted_out, consentUpdatedAt: new Date() },
+    });
+    await prisma.consentEvent.create({
+      data: {
+        contactId: contact.id,
+        type: ConsentEventType.opted_out,
+        detail: stopKeyword,
+      },
+    });
+  }
 
   let conversation = await prisma.conversation.findFirst({
     where: {

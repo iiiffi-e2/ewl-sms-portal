@@ -34,6 +34,19 @@ enum MessageStatus {
   received
 }
 
+enum ConsentStatus {
+  none
+  opted_in
+  opted_out
+}
+
+enum ConsentEventType {
+  intro_sent
+  intro_delivered
+  intro_failed
+  opted_out
+}
+
 enum CallDirection {
   outbound
   inbound
@@ -68,6 +81,7 @@ model User {
   sentMessages          Message[]
   notes                 InternalNote[]
   callLogs              CallLog[]
+  consentEvents         ConsentEvent[]
 }
 
 model Contact {
@@ -79,9 +93,12 @@ model Contact {
   notes                 String?
   emergencyContactName  String?
   emergencyContactPhone String?
+  consentStatus         ConsentStatus  @default(none)
+  consentUpdatedAt      DateTime?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   conversations         Conversation[]
+  consentEvents         ConsentEvent[]
 
   @@index([name])
   @@index([phone])
@@ -119,10 +136,12 @@ model Message {
   status         MessageStatus
   twilioSid      String?          @unique
   errorMessage   String?
+  isConsentIntro Boolean          @default(false)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  consentEvents  ConsentEvent[]
 
   @@index([conversationId, createdAt])
   @@index([status])
@@ -179,4 +198,21 @@ model InternalNote {
 
   @@index([conversationId, createdAt])
   @@index([userId])
+}
+
+model ConsentEvent {
+  id        String           @id @default(uuid())
+  contactId String
+  messageId String?
+  userId    String?
+  type      ConsentEventType
+  twilioSid String?
+  detail    String?
+  createdAt DateTime         @default(now())
+  contact   Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  message   Message?         @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  user      User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([contactId, createdAt])
+  @@index([type])
 }
