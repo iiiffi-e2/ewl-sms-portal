@@ -12,6 +12,30 @@ import {
 } from "react";
 import { Device, Call } from "@twilio/voice-sdk";
 
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+type VoiceTokenResponse = {
+  token: string;
+  expiresIn: number;
+};
+
+type TwilioError = {
+  code?: number;
+  message?: string;
+};
+
+function isTokenExpiredError(error: TwilioError): boolean {
+  return error.code === 20104 || Boolean(error.message?.includes("AccessTokenExpired"));
+}
+
+async function fetchVoiceToken(): Promise<VoiceTokenResponse> {
+  const response = await fetch("/api/voice/token");
+  if (!response.ok) {
+    throw new Error("Voice calling is not available.");
+  }
+  return response.json();
+}
+
 type CallPhase = "idle" | "connecting" | "ringing" | "connected" | "disconnecting" | "error";
 
 type ActiveCallInfo = {
@@ -51,6 +75,8 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
   const deviceRef = useRef<Device | null>(null);
   const activeCallRef = useRef<Call | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tokenExpiresAtRef = useRef<number | null>(null);
   const connectedAtRef = useRef<number | null>(null);
 
   const [callPhase, setCallPhase] = useState<CallPhase>("idle");
@@ -65,6 +91,73 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       timerRef.current = null;
     }
   }, []);
+
+  const clearRefreshTimer = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleTokenRefresh = useCallback(
+    (refreshFn: () => Promise<void>) => {
+      clearRefreshTimer();
+      const expiresAt = tokenExpiresAtRef.current;
+      if (!expiresAt) {
+        return;
+      }
+
+      const delay = Math.max(expiresAt - TOKEN_REFRESH_BUFFER_MS - Date.now(), 0);
+      refreshTimerRef.current = setTimeout(() => {
+        refreshFn().catch((error) => {
+          console.error("Failed to refresh voice token:", error);
+        });
+      }, delay);
+    },
+    [clearRefreshTimer],
+  );
+
+  const refreshDeviceToken = useCallback(async () => {
+    const device = deviceRef.current;
+    if (!device) {
+      throw new Error("Voice device is not initialized.");
+    }
+
+    const data = await fetchVoiceToken();
+    await device.updateToken(data.token);
+    tokenExpiresAtRef.current = Date.now() + data.expiresIn * 1000;
+    scheduleTokenRefresh(() => refreshDeviceTokenRef.current());
+    setErrorMessage(null);
+  }, [scheduleTokenRefresh]);
+
+  const refreshDeviceTokenRef = useRef(refreshDeviceToken);
+  refreshDeviceTokenRef.current = refreshDeviceToken;
+
+  const recoverExpiredToken = useCallback(async () => {
+    const device = deviceRef.current;
+    if (!device) {
+      return false;
+    }
+
+    try {
+      const data = await fetchVoiceToken();
+      await device.updateToken(data.token);
+      await device.register();
+      tokenExpiresAtRef.current = Date.now() + data.expiresIn * 1000;
+      scheduleTokenRefresh(() => refreshDeviceTokenRef.current());
+      setErrorMessage(null);
+      if (!activeCallRef.current) {
+        setCallPhase("idle");
+      }
+      return true;
+    } catch (error) {
+      console.error("Failed to recover expired voice token:", error);
+      return false;
+    }
+  }, [scheduleTokenRefresh]);
+
+  const recoverExpiredTokenRef = useRef(recoverExpiredToken);
+  recoverExpiredTokenRef.current = recoverExpiredToken;
 
   const resetCallState = useCallback(() => {
     clearTimer();
@@ -85,33 +178,35 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setupDevice = useCallback(async () => {
-    const response = await fetch("/api/voice/token");
-    if (!response.ok) {
-      throw new Error("Voice calling is not available.");
-    }
-
-    const data = await response.json();
+    const data = await fetchVoiceToken();
     const device = new Device(data.token, {
       codecPreferences: [Call.Codec.Opus, Call.Codec.PCMU],
     });
 
-    device.on("error", (error) => {
+    tokenExpiresAtRef.current = Date.now() + data.expiresIn * 1000;
+
+    device.on("error", async (error) => {
       console.error("Twilio Device error:", error);
-      setErrorMessage(error.message);
+      if (isTokenExpiredError(error)) {
+        const recovered = await recoverExpiredTokenRef.current();
+        if (recovered) {
+          return;
+        }
+      }
+      setErrorMessage(error.message ?? "Voice calling error.");
       setCallPhase("error");
     });
 
-    device.on("tokenWillExpire", async () => {
-      const tokenResponse = await fetch("/api/voice/token");
-      if (tokenResponse.ok) {
-        const tokenData = await tokenResponse.json();
-        device.updateToken(tokenData.token);
-      }
+    device.on("tokenWillExpire", () => {
+      refreshDeviceTokenRef.current().catch((error) => {
+        console.error("Failed to refresh voice token on expiry warning:", error);
+      });
     });
 
     await device.register();
     deviceRef.current = device;
-  }, []);
+    scheduleTokenRefresh(() => refreshDeviceTokenRef.current());
+  }, [scheduleTokenRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,10 +221,34 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       clearTimer();
+      clearRefreshTimer();
       deviceRef.current?.destroy();
       deviceRef.current = null;
+      tokenExpiresAtRef.current = null;
     };
-  }, [clearTimer, setupDevice]);
+  }, [clearRefreshTimer, clearTimer, setupDevice]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      const expiresAt = tokenExpiresAtRef.current;
+      if (!deviceRef.current || !expiresAt) {
+        return;
+      }
+
+      if (Date.now() >= expiresAt - TOKEN_REFRESH_BUFFER_MS) {
+        refreshDeviceToken().catch((error) => {
+          console.error("Failed to refresh voice token after tab became visible:", error);
+        });
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [refreshDeviceToken]);
 
   const bindCallEvents = useCallback(
     (call: Call, callLogId: string) => {
@@ -171,12 +290,31 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
 
   const startCall = useCallback(
     async (input: { conversationId: string; phone: string; contactName?: string | null }) => {
-      if (!deviceRef.current || callPhase !== "idle") {
+      if (!deviceRef.current) {
+        return;
+      }
+
+      const canStartCall = callPhase === "idle" || callPhase === "error";
+      if (!canStartCall) {
         return;
       }
 
       setErrorMessage(null);
       setCallPhase("connecting");
+
+      const expiresAt = tokenExpiresAtRef.current;
+      if (expiresAt && Date.now() >= expiresAt - TOKEN_REFRESH_BUFFER_MS) {
+        try {
+          await refreshDeviceToken();
+        } catch {
+          const recovered = await recoverExpiredToken();
+          if (!recovered) {
+            setErrorMessage("Voice calling session expired. Refresh the page and try again.");
+            setCallPhase("error");
+            return;
+          }
+        }
+      }
 
       let callLogId: string | null = null;
 
@@ -224,7 +362,7 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
         resetCallState();
       }
     },
-    [bindCallEvents, callPhase, cancelCallLog, resetCallState],
+    [bindCallEvents, callPhase, cancelCallLog, recoverExpiredToken, refreshDeviceToken, resetCallState],
   );
 
   const endCall = useCallback(() => {
