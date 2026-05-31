@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
 import { MessageThread } from "@/components/caretext/MessageThread";
-import { MessageComposer } from "@/components/caretext/MessageComposer";
+import { ConversationComposerArea } from "@/components/caretext/ConversationComposerArea";
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
@@ -55,6 +55,7 @@ type ConversationDetail = {
     notes: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
+    consentStatus: "none" | "opted_in" | "opted_out";
   };
   messages: Array<{
     id: string;
@@ -341,11 +342,18 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   conversationId={activeConversation?.id}
                 />
               </div>
-              <MessageComposer
+              <ConversationComposerArea
                 templates={templates}
-                conversationId={isDraftConversation ? undefined : activeConversation?.id}
+                isDraft={isDraftConversation}
+                conversationId={activeConversation?.id}
+                consentStatus={activeConversation?.contact.consentStatus}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
+                onIntroSent={async () => {
+                  if (!activeConversation) return;
+                  await loadConversationDetail(activeConversation.id);
+                  await loadConversations();
+                }}
                 onSend={async ({ body, phone, conversationId: targetConversationId }) => {
                   const response = await fetch("/api/messages/send", {
                     method: "POST",
@@ -458,11 +466,18 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 conversationId={activeConversation?.id}
               />
             </div>
-            <MessageComposer
+            <ConversationComposerArea
               templates={templates}
-              conversationId={isDraftConversation ? undefined : activeConversation?.id}
+              isDraft={isDraftConversation}
+              conversationId={activeConversation?.id}
+              consentStatus={activeConversation?.contact.consentStatus}
               defaultPhone={defaultPhone}
               onPhoneChange={setDraftPhone}
+              onIntroSent={async () => {
+                if (!activeConversation) return;
+                await loadConversationDetail(activeConversation.id);
+                await loadConversations();
+              }}
               onSend={async ({ body, phone, conversationId: targetConversationId }) => {
                 const response = await fetch("/api/messages/send", {
                   method: "POST",
