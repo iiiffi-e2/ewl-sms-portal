@@ -271,7 +271,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
   return (
     <VoiceCallProvider>
-      <div className="flex h-[calc(100dvh-5rem)] flex-col gap-3 lg:hidden">
+      <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-3 overflow-hidden lg:hidden">
         {!showConversationPane ? (
           <aside className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
             <input
@@ -302,9 +302,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             />
           </aside>
         ) : (
-          <section className="flex min-h-0 flex-1 flex-col gap-3">
+          <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
             <button
-              className="w-fit rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
+              className="w-fit shrink-0 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
               onClick={() => {
                 setConversationId(null);
                 setIsNewConversation(false);
@@ -314,7 +314,142 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             >
               Back to conversations
             </button>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                <div className="shrink-0 space-y-3">
+                  <ConversationHeader
+                    conversationId={activeConversation?.id}
+                    contactName={activeConversation?.contact.name}
+                    phone={activeConversation?.contact.phone}
+                    facility={activeConversation?.contact.facility}
+                    status={activeConversation?.status}
+                    isDraft={isDraftConversation}
+                    isAdmin={isAdmin}
+                    onStatusChange={async (status) => {
+                      if (!activeConversation) return;
+                      await fetch(`/api/conversations/${activeConversation.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ status }),
+                      });
+                      await loadConversationDetail(activeConversation.id);
+                      await loadConversations();
+                    }}
+                    onDeleteConversation={handleDeleteConversation}
+                  />
+                  <CallBar />
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <MessageThread
+                    messages={activeConversation?.messages ?? []}
+                    callLogs={activeConversation?.callLogs ?? []}
+                    conversationId={activeConversation?.id}
+                  />
+                </div>
+                <div className="shrink-0">
+                  <ConversationComposerArea
+                templates={templates}
+                isDraft={isDraftConversation}
+                conversationId={activeConversation?.id}
+                consentStatus={activeConversation?.contact.consentStatus}
+                defaultPhone={defaultPhone}
+                onPhoneChange={setDraftPhone}
+                onIntroSent={async () => {
+                  if (!activeConversation) return;
+                  await loadConversationDetail(activeConversation.id);
+                  await loadConversations();
+                }}
+                onSend={async ({ body, phone, conversationId: targetConversationId }) => {
+                  const response = await fetch("/api/messages/send", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      body,
+                      phone: targetConversationId ? defaultPhone : phone,
+                      conversationId: targetConversationId,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error ?? "Failed to send message.");
+                  }
+
+                  const data = await response.json();
+                  setConversationId(data.conversationId);
+                  setIsNewConversation(false);
+                  await loadConversations();
+                  await loadConversationDetail(data.conversationId);
+                }}
+                  />
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              <ContactDetailsCard
+                contact={activeConversation?.contact}
+                isDraft={isDraftConversation}
+                draftPhone={draftPhone}
+                onDraftPhoneChange={setDraftPhone}
+                onCreate={handleCreateConversation}
+                onUpdated={async () => {
+                  if (!activeConversation) return;
+                  await loadConversationDetail(activeConversation.id);
+                  await loadConversations();
+                }}
+              />
+              <InternalNotesPanel
+                conversationId={activeConversation?.id}
+                notes={activeConversation?.notes ?? []}
+                onCreated={(newNote) => {
+                  if (!activeConversation) return;
+                  setActiveConversation({
+                    ...activeConversation,
+                    notes: [newNote, ...activeConversation.notes],
+                  });
+                }}
+              />
+              <CallLogsPanel callLogs={activeConversation?.callLogs ?? []} />
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="hidden h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-hidden lg:flex">
+        <aside className="flex min-h-0 w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+            placeholder="Search name, phone, or facility"
+          />
+          <button
+            className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
+            onClick={() => {
+              setIsNewConversation(true);
+              setConversationId(null);
+              setDraftPhone("");
+              setActiveConversation(null);
+            }}
+          >
+            New Conversation
+          </button>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ConversationList
+              conversations={conversations}
+              selectedConversationId={conversationId ?? undefined}
+              onSelect={(id) => {
+                setConversationId(id);
+                setIsNewConversation(false);
+                setDraftPhone("");
+              }}
+            />
+          </div>
+        </aside>
+
+        <section className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
+            <div className="shrink-0 space-y-3">
               <ConversationHeader
                 conversationId={activeConversation?.id}
                 contactName={activeConversation?.contact.name}
@@ -336,13 +471,15 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 onDeleteConversation={handleDeleteConversation}
               />
               <CallBar />
-              <div className="min-h-0 h-[40dvh]">
-                <MessageThread
-                  messages={activeConversation?.messages ?? []}
-                  callLogs={activeConversation?.callLogs ?? []}
-                  conversationId={activeConversation?.id}
-                />
-              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <MessageThread
+                messages={activeConversation?.messages ?? []}
+                callLogs={activeConversation?.callLogs ?? []}
+                conversationId={activeConversation?.id}
+              />
+            </div>
+            <div className="shrink-0">
               <ConversationComposerArea
                 templates={templates}
                 isDraft={isDraftConversation}
@@ -378,133 +515,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   await loadConversationDetail(data.conversationId);
                 }}
               />
-              <ContactDetailsCard
-                contact={activeConversation?.contact}
-                isDraft={isDraftConversation}
-                draftPhone={draftPhone}
-                onDraftPhoneChange={setDraftPhone}
-                onCreate={handleCreateConversation}
-                onUpdated={async () => {
-                  if (!activeConversation) return;
-                  await loadConversationDetail(activeConversation.id);
-                  await loadConversations();
-                }}
-              />
-              <InternalNotesPanel
-                conversationId={activeConversation?.id}
-                notes={activeConversation?.notes ?? []}
-                onCreated={(newNote) => {
-                  if (!activeConversation) return;
-                  setActiveConversation({
-                    ...activeConversation,
-                    notes: [newNote, ...activeConversation.notes],
-                  });
-                }}
-              />
-              <CallLogsPanel callLogs={activeConversation?.callLogs ?? []} />
             </div>
-          </section>
-        )}
-      </div>
-
-      <div className="hidden h-[calc(100dvh-5rem)] gap-4 lg:flex">
-        <aside className="flex w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-            placeholder="Search name, phone, or facility"
-          />
-          <button
-            className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
-            onClick={() => {
-              setIsNewConversation(true);
-              setConversationId(null);
-              setDraftPhone("");
-              setActiveConversation(null);
-            }}
-          >
-            New Conversation
-          </button>
-          <ConversationList
-            conversations={conversations}
-            selectedConversationId={conversationId ?? undefined}
-            onSelect={(id) => {
-              setConversationId(id);
-              setIsNewConversation(false);
-              setDraftPhone("");
-            }}
-          />
-        </aside>
-
-        <section className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4">
-          <div className="flex min-h-0 min-w-0 flex-col gap-3">
-            <ConversationHeader
-              conversationId={activeConversation?.id}
-              contactName={activeConversation?.contact.name}
-              phone={activeConversation?.contact.phone}
-              facility={activeConversation?.contact.facility}
-              status={activeConversation?.status}
-              isDraft={isDraftConversation}
-              isAdmin={isAdmin}
-              onStatusChange={async (status) => {
-                if (!activeConversation) return;
-                await fetch(`/api/conversations/${activeConversation.id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ status }),
-                });
-                await loadConversationDetail(activeConversation.id);
-                await loadConversations();
-              }}
-              onDeleteConversation={handleDeleteConversation}
-            />
-            <CallBar />
-            <div className="min-h-0 flex-1">
-              <MessageThread
-                messages={activeConversation?.messages ?? []}
-                callLogs={activeConversation?.callLogs ?? []}
-                conversationId={activeConversation?.id}
-              />
-            </div>
-            <ConversationComposerArea
-              templates={templates}
-              isDraft={isDraftConversation}
-              conversationId={activeConversation?.id}
-              consentStatus={activeConversation?.contact.consentStatus}
-              defaultPhone={defaultPhone}
-              onPhoneChange={setDraftPhone}
-              onIntroSent={async () => {
-                if (!activeConversation) return;
-                await loadConversationDetail(activeConversation.id);
-                await loadConversations();
-              }}
-              onSend={async ({ body, phone, conversationId: targetConversationId }) => {
-                const response = await fetch("/api/messages/send", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    body,
-                    phone: targetConversationId ? defaultPhone : phone,
-                    conversationId: targetConversationId,
-                  }),
-                });
-
-                if (!response.ok) {
-                  const errorData = await response.json();
-                  throw new Error(errorData.error ?? "Failed to send message.");
-                }
-
-                const data = await response.json();
-                setConversationId(data.conversationId);
-                setIsNewConversation(false);
-                await loadConversations();
-                await loadConversationDetail(data.conversationId);
-              }}
-            />
           </div>
 
-          <div className="space-y-3">
+          <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
             <ContactDetailsCard
               contact={activeConversation?.contact}
               isDraft={isDraftConversation}

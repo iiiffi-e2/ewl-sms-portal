@@ -50,7 +50,7 @@ export function MessageComposer({
       )}
       <TemplateSelector templates={templates} onChoose={(templateBody) => setBody(templateBody)} />
       <textarea
-        className="h-28 w-full rounded-lg border border-border px-3 py-2.5 text-sm"
+        className="h-24 w-full resize-y rounded-lg border border-border px-3 py-2.5 text-sm"
         placeholder="Type your message..."
         value={body}
         onChange={(event) => setBody(event.target.value)}
