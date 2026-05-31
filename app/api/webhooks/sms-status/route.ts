@@ -42,18 +42,29 @@ export async function POST(request: Request) {
     message.isConsentIntro &&
     (mappedStatus === MessageStatus.delivered || mappedStatus === MessageStatus.failed)
   ) {
-    await prisma.consentEvent.create({
-      data: {
-        contactId: message.conversation.contactId,
-        messageId: message.id,
-        type:
-          mappedStatus === MessageStatus.delivered
-            ? ConsentEventType.intro_delivered
-            : ConsentEventType.intro_failed,
-        twilioSid: message.twilioSid,
-        detail: errorMessage,
-      },
+    const eventType =
+      mappedStatus === MessageStatus.delivered
+        ? ConsentEventType.intro_delivered
+        : ConsentEventType.intro_failed;
+
+    // Twilio may resend the same terminal status; only record the first one
+    // so the audit log keeps one delivery event per intro message.
+    const existingEvent = await prisma.consentEvent.findFirst({
+      where: { messageId: message.id, type: eventType },
+      select: { id: true },
     });
+
+    if (!existingEvent) {
+      await prisma.consentEvent.create({
+        data: {
+          contactId: message.conversation.contactId,
+          messageId: message.id,
+          type: eventType,
+          twilioSid: message.twilioSid,
+          detail: errorMessage,
+        },
+      });
+    }
   }
 
   return NextResponse.json({ ok: true });

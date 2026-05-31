@@ -52,59 +52,64 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     },
   });
 
+  let result: Awaited<ReturnType<ReturnType<typeof getTwilioClient>["messages"]["create"]>>;
   try {
     const twilioClient = getTwilioClient();
-    const result = await twilioClient.messages.create({
+    result = await twilioClient.messages.create({
       from: getTwilioFromNumber(),
       to: contact.phone,
       body: OPT_IN_INTRO_TEXT,
       statusCallback: `${process.env.NEXTAUTH_URL}/api/webhooks/sms-status`,
     });
-
-    const savedMessage = await prisma.message.update({
-      where: { id: queuedMessage.id },
-      data: { twilioSid: result.sid, status: MessageStatus.sent },
-    });
-
-    await prisma.contact.update({
-      where: { id: contact.id },
-      data: { consentStatus: ConsentStatus.opted_in, consentUpdatedAt: new Date() },
-    });
-
-    await prisma.consentEvent.create({
-      data: {
-        contactId: contact.id,
-        messageId: savedMessage.id,
-        userId: authResult.session.user.id,
-        type: ConsentEventType.intro_sent,
-        twilioSid: result.sid,
-      },
-    });
-
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: new Date(), status: ConversationStatus.awaiting_reply },
-    });
-
-    return NextResponse.json({ message: savedMessage, conversationId: conversation.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send opt-in intro.";
 
-    await prisma.message.update({
-      where: { id: queuedMessage.id },
-      data: { status: MessageStatus.failed, errorMessage: message },
-    });
+    // Twilio rejected the intro: it was never sent, so the contact stays `none`
+    // (gate remains closed) and staff can retry. Record the failure atomically.
+    await prisma.$transaction([
+      prisma.message.update({
+        where: { id: queuedMessage.id },
+        data: { status: MessageStatus.failed, errorMessage: message },
+      }),
+      prisma.consentEvent.create({
+        data: {
+          contactId: contact.id,
+          messageId: queuedMessage.id,
+          userId: authResult.session.user.id,
+          type: ConsentEventType.intro_failed,
+          detail: message,
+        },
+      }),
+    ]);
 
-    await prisma.consentEvent.create({
+    return NextResponse.json({ error: message, code: "intro_send_failed" }, { status: 502 });
+  }
+
+  // Twilio accepted the intro (accept-on-send). Flip the contact to opted_in and
+  // record the evidence atomically so consent state and audit never diverge.
+  const [savedMessage] = await prisma.$transaction([
+    prisma.message.update({
+      where: { id: queuedMessage.id },
+      data: { twilioSid: result.sid, status: MessageStatus.sent },
+    }),
+    prisma.contact.update({
+      where: { id: contact.id },
+      data: { consentStatus: ConsentStatus.opted_in, consentUpdatedAt: new Date() },
+    }),
+    prisma.consentEvent.create({
       data: {
         contactId: contact.id,
         messageId: queuedMessage.id,
         userId: authResult.session.user.id,
-        type: ConsentEventType.intro_failed,
-        detail: message,
+        type: ConsentEventType.intro_sent,
+        twilioSid: result.sid,
       },
-    });
+    }),
+    prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date(), status: ConversationStatus.awaiting_reply },
+    }),
+  ]);
 
-    return NextResponse.json({ error: message, code: "intro_send_failed" }, { status: 502 });
-  }
+  return NextResponse.json({ message: savedMessage, conversationId: conversation.id });
 }
