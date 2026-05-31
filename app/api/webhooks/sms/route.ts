@@ -9,7 +9,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
-import { matchStopKeyword } from "@/lib/consent";
+import { matchStartKeyword, matchStopKeyword } from "@/lib/consent";
 
 export async function POST(request: Request) {
   const payload = await request.formData();
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
   });
 
   const stopKeyword = matchStopKeyword(body);
+  const startKeyword = matchStartKeyword(body);
   if (stopKeyword && contact.consentStatus !== ConsentStatus.opted_out) {
     await prisma.contact.update({
       where: { id: contact.id },
@@ -49,6 +50,18 @@ export async function POST(request: Request) {
         contactId: contact.id,
         type: ConsentEventType.opted_out,
         detail: stopKeyword,
+      },
+    });
+  } else if (startKeyword && contact.consentStatus === ConsentStatus.opted_out) {
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { consentStatus: ConsentStatus.opted_in, consentUpdatedAt: new Date() },
+    });
+    await prisma.consentEvent.create({
+      data: {
+        contactId: contact.id,
+        type: ConsentEventType.resubscribed,
+        detail: startKeyword,
       },
     });
   }

@@ -7,6 +7,7 @@ type Conversation = {
   contact: {
     name: string | null;
     phone: string;
+    consentStatus?: "none" | "opted_in" | "opted_out";
   };
   assignedTo: {
     name: string;
@@ -35,6 +36,7 @@ export function ConversationList({
           phone={conversation.contact.phone}
           preview={conversation.messages[0]?.body ?? ""}
           status={conversation.status}
+          consentStatus={conversation.contact.consentStatus}
           assignedTo={conversation.assignedTo?.name}
           lastMessageAt={conversation.lastMessageAt}
           selected={selectedConversationId === conversation.id}

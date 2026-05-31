@@ -12,6 +12,17 @@ export function matchStopKeyword(body: string): StopKeyword | null {
   return STOP_KEYWORDS.find((keyword) => keyword === normalized) ?? null;
 }
 
+// Mirrors Twilio's default resubscribe keywords so our consent state stays in
+// sync with carrier-level opt back in.
+export const START_KEYWORDS = ["START", "UNSTOP", "YES"] as const;
+
+export type StartKeyword = (typeof START_KEYWORDS)[number];
+
+export function matchStartKeyword(body: string): StartKeyword | null {
+  const normalized = body.trim().toUpperCase();
+  return START_KEYWORDS.find((keyword) => keyword === normalized) ?? null;
+}
+
 export type ConsentGuardCode = "consent_required" | "consent_opted_out";
 
 export type ConsentGuardResult =
