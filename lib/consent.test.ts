@@ -3,7 +3,9 @@ import { ConsentStatus } from "@prisma/client";
 import {
   OPT_IN_INTRO_TEXT,
   STOP_KEYWORDS,
+  START_KEYWORDS,
   matchStopKeyword,
+  matchStartKeyword,
   evaluateOutboundConsent,
 } from "@/lib/consent";
 
@@ -26,6 +28,21 @@ describe("matchStopKeyword", () => {
     expect(matchStopKeyword("hello there")).toBeNull();
     expect(matchStopKeyword("please stop calling me")).toBeNull();
     expect(matchStopKeyword("")).toBeNull();
+  });
+});
+
+describe("matchStartKeyword", () => {
+  it("matches each START-family keyword case-insensitively, ignoring surrounding whitespace", () => {
+    for (const keyword of START_KEYWORDS) {
+      expect(matchStartKeyword(`  ${keyword.toLowerCase()}  `)).toBe(keyword);
+    }
+  });
+
+  it("returns null for non-start messages", () => {
+    expect(matchStartKeyword("hello there")).toBeNull();
+    expect(matchStartKeyword("let's get started")).toBeNull();
+    expect(matchStartKeyword("STOP")).toBeNull();
+    expect(matchStartKeyword("")).toBeNull();
   });
 });
 

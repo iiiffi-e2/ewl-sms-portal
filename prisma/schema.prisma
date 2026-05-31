@@ -45,6 +45,7 @@ enum ConsentEventType {
   intro_delivered
   intro_failed
   opted_out
+  resubscribed
 }
 
 enum CallDirection {

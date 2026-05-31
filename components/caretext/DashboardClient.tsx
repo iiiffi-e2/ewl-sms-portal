@@ -32,6 +32,7 @@ type ConversationListResponse = {
       notes: string | null;
       emergencyContactName: string | null;
       emergencyContactPhone: string | null;
+      consentStatus: "none" | "opted_in" | "opted_out";
     };
     assignedTo: { id: string; name: string } | null;
     messages: {
