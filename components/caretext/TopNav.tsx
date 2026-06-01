@@ -12,9 +12,9 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
           <Image
             src="/caretext-logo.png"
             alt="CareText"
-            width={1024}
-            height={232}
-            className="h-9 w-auto"
+            width={2200}
+            height={500}
+            className="h-auto w-[195px]"
             priority
           />
         </Link>
