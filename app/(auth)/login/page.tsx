@@ -17,7 +17,7 @@ export default async function LoginPage() {
             src="/caretext-logo.png"
             alt="CareText"
             width={1024}
-            height={426}
+            height={232}
             className="h-12 w-auto"
             priority
           />
