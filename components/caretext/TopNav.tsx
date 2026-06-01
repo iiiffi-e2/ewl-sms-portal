@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 
@@ -7,7 +8,16 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
   return (
     <header className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-white px-4 py-3">
       <div className="flex min-w-0 items-center gap-4">
-        <p className="text-lg font-semibold">CareText</p>
+        <Link href="/dashboard" className="shrink-0">
+          <Image
+            src="/caretext-logo.png"
+            alt="CareText"
+            width={1024}
+            height={426}
+            className="h-9 w-auto"
+            priority
+          />
+        </Link>
         <nav className="flex items-center gap-3 text-sm text-muted">
           <Link href="/dashboard" className="hover:text-foreground">
             Dashboard
