@@ -249,25 +249,27 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     [loadConversations],
   );
 
-  const handleDeleteConversation = useCallback(async () => {
-    if (!activeConversation) {
-      return;
-    }
+  const handleDeleteConversation = useCallback(
+    async (conversationIdToDelete: string) => {
+      const response = await fetch(`/api/conversations/${conversationIdToDelete}`, {
+        method: "DELETE",
+      });
 
-    const response = await fetch(`/api/conversations/${activeConversation.id}`, {
-      method: "DELETE",
-    });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error ?? "Failed to remove conversation.");
+      }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      throw new Error(errorData?.error ?? "Failed to delete conversation.");
-    }
+      if (activeConversation?.id === conversationIdToDelete) {
+        setActiveConversation(null);
+        setConversationId(null);
+        setIsNewConversation(false);
+      }
 
-    setActiveConversation(null);
-    setConversationId(null);
-    setIsNewConversation(false);
-    await loadConversations();
-  }, [activeConversation, loadConversations]);
+      await loadConversations();
+    },
+    [activeConversation, loadConversations],
+  );
 
   return (
     <VoiceCallProvider>
@@ -294,11 +296,13 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <ConversationList
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
+              isAdmin={isAdmin}
               onSelect={(id) => {
                 setConversationId(id);
                 setIsNewConversation(false);
                 setDraftPhone("");
               }}
+              onDelete={handleDeleteConversation}
             />
           </aside>
         ) : (
@@ -335,7 +339,11 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                       await loadConversationDetail(activeConversation.id);
                       await loadConversations();
                     }}
-                    onDeleteConversation={handleDeleteConversation}
+                    onDeleteConversation={
+                      activeConversation
+                        ? () => handleDeleteConversation(activeConversation.id)
+                        : undefined
+                    }
                   />
                   <CallBar />
                 </div>
@@ -438,11 +446,13 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <ConversationList
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
+              isAdmin={isAdmin}
               onSelect={(id) => {
                 setConversationId(id);
                 setIsNewConversation(false);
                 setDraftPhone("");
               }}
+              onDelete={handleDeleteConversation}
             />
           </div>
         </aside>
@@ -468,7 +478,11 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   await loadConversationDetail(activeConversation.id);
                   await loadConversations();
                 }}
-                onDeleteConversation={handleDeleteConversation}
+                onDeleteConversation={
+                  activeConversation
+                    ? () => handleDeleteConversation(activeConversation.id)
+                    : undefined
+                }
               />
               <CallBar />
             </div>

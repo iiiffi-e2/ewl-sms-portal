@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { StatusBadge } from "@/components/caretext/StatusBadge";
+import { DeleteConversationModal } from "@/components/caretext/DeleteConversationModal";
 import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
 
 type ConversationHeaderProps = {
@@ -31,9 +32,6 @@ export function ConversationHeader({
 }: ConversationHeaderProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteConfirmationValue, setDeleteConfirmationValue] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const isStartingCall = callPhase === "connecting";
@@ -72,12 +70,10 @@ export function ConversationHeader({
                   className="w-full px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
                   onClick={() => {
                     setIsOptionsOpen(false);
-                    setDeleteError(null);
-                    setDeleteConfirmationValue("");
                     setIsDeleteModalOpen(true);
                   }}
                 >
-                  Delete thread
+                  Remove thread
                 </button>
               </div>
             ) : null}
@@ -129,62 +125,14 @@ export function ConversationHeader({
       </div>
 
       {isDeleteModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-border bg-white p-5 shadow-lg">
-            <h2 className="text-lg font-semibold text-slate-900">Delete this thread?</h2>
-            <p className="mt-2 text-sm text-muted">
-              This permanently deletes the conversation and its messages. Type{" "}
-              <span className="font-semibold text-slate-900">CONFIRM</span> to continue.
-            </p>
-            <input
-              value={deleteConfirmationValue}
-              onChange={(event) => setDeleteConfirmationValue(event.target.value)}
-              placeholder="Type CONFIRM"
-              className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm"
-            />
-            {deleteError ? <p className="mt-2 text-sm text-rose-700">{deleteError}</p> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={isDeleting}
-                className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
-                onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setDeleteError(null);
-                  setDeleteConfirmationValue("");
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting || deleteConfirmationValue !== "CONFIRM"}
-                className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={async () => {
-                  if (deleteConfirmationValue !== "CONFIRM") {
-                    return;
-                  }
-
-                  setIsDeleting(true);
-                  setDeleteError(null);
-                  try {
-                    await onDeleteConversation?.();
-                    setIsDeleteModalOpen(false);
-                    setDeleteConfirmationValue("");
-                  } catch (error) {
-                    setDeleteError(
-                      error instanceof Error ? error.message : "Failed to delete conversation.",
-                    );
-                  } finally {
-                    setIsDeleting(false);
-                  }
-                }}
-              >
-                {isDeleting ? "Deleting..." : "Delete thread"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeleteConversationModal
+          contactLabel={contactName || phone}
+          onCancel={() => setIsDeleteModalOpen(false)}
+          onConfirm={async () => {
+            await onDeleteConversation?.();
+            setIsDeleteModalOpen(false);
+          }}
+        />
       ) : null}
     </>
   );
