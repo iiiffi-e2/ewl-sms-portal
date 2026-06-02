@@ -20,11 +20,12 @@ type ConversationListItemProps = {
 
 export function ConversationListItem(props: ConversationListItemProps) {
   const optedOut = props.consentStatus === "opted_out";
+  const showDelete = props.isAdmin && props.onDelete;
 
   return (
     <div
       className={clsx(
-        "relative w-full space-y-1 rounded-lg border px-3 py-2 transition-colors",
+        "flex w-full items-start gap-1 rounded-lg border px-3 py-2.5 transition-colors",
         optedOut
           ? props.selected
             ? "border-red-400 bg-red-100 hover:bg-red-100"
@@ -34,11 +35,33 @@ export function ConversationListItem(props: ConversationListItemProps) {
             : "border-border bg-white hover:border-indigo-200 hover:bg-slate-50",
       )}
     >
-      {props.isAdmin && props.onDelete ? (
+      <button type="button" onClick={props.onClick} className="min-w-0 flex-1 space-y-1.5 text-left">
+        <div className="flex items-center gap-2">
+          <p className={clsx("min-w-0 flex-1 truncate text-sm font-semibold", optedOut && "text-red-800")}>
+            {props.name || props.phone}
+          </p>
+          <span className="shrink-0 whitespace-nowrap text-[11px] leading-none text-muted">
+            {formatRelativeTime(props.lastMessageAt)}
+          </span>
+        </div>
+        <p className="truncate text-xs text-muted">{props.preview || "No messages yet."}</p>
+        <div className="flex items-center justify-between gap-2">
+          {optedOut ? (
+            <span className="inline-flex items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+              Opted out — do not text
+            </span>
+          ) : (
+            <StatusBadge status={props.status} />
+          )}
+          <span className="shrink-0 text-[11px] text-muted">{props.assignedTo || "Unassigned"}</span>
+        </div>
+        {props.unread ? <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" /> : null}
+      </button>
+      {showDelete ? (
         <button
           type="button"
           aria-label={`Remove thread for ${props.name || props.phone}`}
-          className="absolute right-2 top-2 rounded-md p-1 text-slate-400 hover:bg-white/80 hover:text-rose-600"
+          className="-mr-1 shrink-0 rounded-md p-1 text-slate-400 hover:bg-white/80 hover:text-rose-600"
           onClick={(event) => {
             event.stopPropagation();
             props.onDelete?.();
@@ -59,26 +82,6 @@ export function ConversationListItem(props: ConversationListItemProps) {
           </svg>
         </button>
       ) : null}
-      <button type="button" onClick={props.onClick} className="w-full space-y-1 pr-6 text-left">
-      <div className="flex items-center justify-between gap-2">
-        <p className={clsx("truncate text-sm font-semibold", optedOut && "text-red-800")}>
-          {props.name || props.phone}
-        </p>
-        <span className="text-[11px] text-muted">{formatRelativeTime(props.lastMessageAt)}</span>
-      </div>
-      <p className="truncate text-xs text-muted">{props.preview || "No messages yet."}</p>
-      <div className="flex items-center justify-between">
-        {optedOut ? (
-          <span className="inline-flex items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-            Opted out — do not text
-          </span>
-        ) : (
-          <StatusBadge status={props.status} />
-        )}
-        <span className="text-[11px] text-muted">{props.assignedTo || "Unassigned"}</span>
-      </div>
-      {props.unread ? <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" /> : null}
-      </button>
     </div>
   );
 }
