@@ -4,26 +4,50 @@ import { compare } from "bcryptjs";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 
-// Set NEXTAUTH_EMBED_CROSS_ORIGIN=true on HTTPS deployments where the inbox is embedded on another origin.
+// Required on HTTPS when /embed/* is iframe-embedded on another origin (third-party cookie context).
 const useCrossOriginEmbedCookies = process.env.NEXTAUTH_EMBED_CROSS_ORIGIN === "true";
+const useSecureCookies = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
+
+function buildCrossOriginEmbedCookies(): NonNullable<NextAuthOptions["cookies"]> {
+  const secure = useSecureCookies || useCrossOriginEmbedCookies;
+  const sameSite = "none" as const;
+
+  return {
+    sessionToken: {
+      name: secure ? "__Secure-next-auth.session-token" : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite,
+        path: "/",
+        secure,
+      },
+    },
+    callbackUrl: {
+      name: secure ? "__Secure-next-auth.callback-url" : "next-auth.callback-url",
+      options: {
+        sameSite,
+        path: "/",
+        secure,
+      },
+    },
+    csrfToken: {
+      name: secure ? "__Secure-next-auth.csrf-token" : "next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite,
+        path: "/",
+        secure,
+      },
+    },
+  };
+}
 
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  cookies: useCrossOriginEmbedCookies
-    ? {
-        sessionToken: {
-          name: "__Secure-next-auth.session-token",
-          options: {
-            httpOnly: true,
-            sameSite: "none",
-            path: "/",
-            secure: true,
-          },
-        },
-      }
-    : undefined,
+  useSecureCookies: useSecureCookies || useCrossOriginEmbedCookies,
+  cookies: useCrossOriginEmbedCookies ? buildCrossOriginEmbedCookies() : undefined,
   pages: {
     signIn: "/login",
   },

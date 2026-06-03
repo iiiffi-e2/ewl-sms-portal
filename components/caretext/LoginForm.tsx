@@ -1,11 +1,27 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 
 type LoginFormProps = {
   callbackUrl?: string;
 };
+
+async function requestCrossSiteStorageAccess() {
+  if (typeof window === "undefined" || window.self === window.top) {
+    return;
+  }
+
+  if (!document.requestStorageAccess) {
+    return;
+  }
+
+  try {
+    await document.requestStorageAccess();
+  } catch {
+    // Browser may still accept SameSite=None cookies without storage access.
+  }
+}
 
 export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
   const [email, setEmail] = useState("admin@example.com");
@@ -18,6 +34,8 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
     setLoading(true);
     setError(null);
 
+    await requestCrossSiteStorageAccess();
+
     const result = await signIn("credentials", {
       email,
       password,
@@ -25,9 +43,18 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
       callbackUrl,
     });
 
-    setLoading(false);
-    if (result?.error) {
-      setError("Invalid credentials.");
+    if (!result?.ok) {
+      setLoading(false);
+      setError(result?.error === "CredentialsSignin" ? "Invalid credentials." : "Sign in failed. Please try again.");
+      return;
+    }
+
+    const session = await getSession();
+    if (!session) {
+      setLoading(false);
+      setError(
+        "Login succeeded but this browser did not keep your session. If the portal is embedded on another site, set NEXTAUTH_EMBED_CROSS_ORIGIN=true on HTTPS and redeploy.",
+      );
       return;
     }
 
