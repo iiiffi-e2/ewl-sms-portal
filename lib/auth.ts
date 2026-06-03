@@ -4,10 +4,26 @@ import { compare } from "bcryptjs";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 
+// Set NEXTAUTH_EMBED_CROSS_ORIGIN=true on HTTPS deployments where the inbox is embedded on another origin.
+const useCrossOriginEmbedCookies = process.env.NEXTAUTH_EMBED_CROSS_ORIGIN === "true";
+
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
+  cookies: useCrossOriginEmbedCookies
+    ? {
+        sessionToken: {
+          name: "__Secure-next-auth.session-token",
+          options: {
+            httpOnly: true,
+            sameSite: "none",
+            path: "/",
+            secure: true,
+          },
+        },
+      }
+    : undefined,
   pages: {
     signIn: "/login",
   },

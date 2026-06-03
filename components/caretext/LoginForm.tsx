@@ -3,7 +3,11 @@
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
 
-export function LoginForm() {
+type LoginFormProps = {
+  callbackUrl?: string;
+};
+
+export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("password123");
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +22,7 @@ export function LoginForm() {
       email,
       password,
       redirect: false,
-      callbackUrl: "/dashboard",
+      callbackUrl,
     });
 
     setLoading(false);
@@ -27,7 +31,7 @@ export function LoginForm() {
       return;
     }
 
-    window.location.href = "/dashboard";
+    window.location.href = callbackUrl;
   }
 
   return (
