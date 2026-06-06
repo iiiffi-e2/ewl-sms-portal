@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { MessageBubble } from "@/components/caretext/MessageBubble";
 import { CallThreadBar } from "@/components/caretext/CallThreadBar";
-import { attachReactionsToMessages } from "@/lib/message-reactions";
+import { attachReactionsToMessages, type MessageReaction } from "@/lib/message-reactions";
 
 type Message = {
   id: string;
@@ -11,6 +11,10 @@ type Message = {
   direction: "inbound" | "outbound";
   status: string;
   createdAt: string;
+};
+
+type DisplayMessage = Message & {
+  reactions: MessageReaction[];
 };
 
 type CallLog = {
@@ -21,7 +25,7 @@ type CallLog = {
 };
 
 type ThreadItem =
-  | { kind: "message"; id: string; at: string; message: Message }
+  | { kind: "message"; id: string; at: string; message: DisplayMessage }
   | { kind: "call"; id: string; at: string; callLog: CallLog };
 
 export function MessageThread({
