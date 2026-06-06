@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { MessageBubble } from "@/components/caretext/MessageBubble";
 import { CallThreadBar } from "@/components/caretext/CallThreadBar";
+import { attachReactionsToMessages } from "@/lib/message-reactions";
 
 type Message = {
   id: string;
@@ -35,9 +36,11 @@ export function MessageThread({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastAutoScrolledConversationIdRef = useRef<string | null>(null);
 
+  const displayMessages = useMemo(() => attachReactionsToMessages(messages), [messages]);
+
   const threadItems = useMemo<ThreadItem[]>(() => {
     const items: ThreadItem[] = [
-      ...messages.map((message) => ({
+      ...displayMessages.map((message) => ({
         kind: "message" as const,
         id: message.id,
         at: message.createdAt,
@@ -52,7 +55,7 @@ export function MessageThread({
     ];
 
     return items.sort((left, right) => new Date(left.at).getTime() - new Date(right.at).getTime());
-  }, [callLogs, messages]);
+  }, [callLogs, displayMessages]);
 
   useEffect(() => {
     if (!conversationId || !threadItems.length) {
@@ -88,13 +91,18 @@ export function MessageThread({
     >
       {threadItems.map((item) =>
         item.kind === "message" ? (
-          <MessageBubble
+          <div
             key={item.id}
-            body={item.message.body}
-            direction={item.message.direction}
-            status={item.message.status}
-            createdAt={item.message.createdAt}
-          />
+            className={item.message.reactions.length > 0 ? "pb-2" : undefined}
+          >
+            <MessageBubble
+              body={item.message.body}
+              direction={item.message.direction}
+              status={item.message.status}
+              createdAt={item.message.createdAt}
+              reactions={item.message.reactions.map((reaction) => reaction.emoji)}
+            />
+          </div>
         ) : (
           <CallThreadBar
             key={item.id}
