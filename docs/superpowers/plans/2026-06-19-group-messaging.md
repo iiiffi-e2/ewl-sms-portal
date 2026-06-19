@@ -82,37 +82,52 @@ import twilio from "twilio";
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const serviceSid = process.env.TWILIO_CONVERSATIONS_SERVICE_SID;
+const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const projectedAddress = process.env.TWILIO_GROUP_PROJECTED_ADDRESS;
 const testPhone1 = process.env.GROUP_TEST_PHONE_1;
 const testPhone2 = process.env.GROUP_TEST_PHONE_2;
 
-if (!accountSid || !authToken || !serviceSid || !projectedAddress || !testPhone1 || !testPhone2) {
+if (!accountSid || !authToken || !messagingServiceSid || !projectedAddress || !testPhone1 || !testPhone2) {
   console.error(
-    "Missing env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_CONVERSATIONS_SERVICE_SID, TWILIO_GROUP_PROJECTED_ADDRESS, GROUP_TEST_PHONE_1, GROUP_TEST_PHONE_2",
+    "Missing env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_MESSAGING_SERVICE_SID, TWILIO_GROUP_PROJECTED_ADDRESS, GROUP_TEST_PHONE_1, GROUP_TEST_PHONE_2",
   );
   process.exit(1);
 }
 
 const client = twilio(accountSid, authToken);
 
+// IMPORTANT: conversationWithParticipants takes `participant` as an array of
+// STRINGIFIED JSON (snake_case keys), NOT objects with dotted keys. This uses
+// the default Conversations Service; the Messaging Service routes the SMS/MMS.
 async function main() {
   console.log("Creating group conversation with 2 SMS participants + projected address...");
 
   const conversation = await client.conversations.v1.conversationWithParticipants.create({
     friendlyName: "CareText Group MMS Spike",
-    chatServiceSid: serviceSid,
+    messagingServiceSid,
     participant: [
-      { "messagingBinding.address": testPhone1 },
-      { "messagingBinding.address": testPhone2 },
-      {
-        "messagingBinding.projectedAddress": projectedAddress,
-        identity: "caretext-portal",
-      },
+      JSON.stringify({ messaging_binding: { address: testPhone1 } }),
+      JSON.stringify({ messaging_binding: { address: testPhone2 } }),
+      JSON.stringify({ messaging_binding: { projected_address: projectedAddress } }),
     ],
   });
 
-  console.log("Conversation SID:", conversation.sid);
+  console.log("Conversation SID:", conversation.sid, "state:", conversation.state);
+
+  // The conversation is created in `initializing` state; participants are added
+  // asynchronously and state flips to `active`. Poll until active before sending.
+  let state = conversation.state;
+  for (let attempt = 0; attempt < 10 && state !== "active"; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const refreshed = await client.conversations.v1.conversations(conversation.sid).fetch();
+    state = refreshed.state;
+    console.log("  polling state:", state);
+  }
+
+  if (state !== "active") {
+    console.error("Conversation did not reach active state. Check Twilio error logs.");
+    process.exit(1);
+  }
 
   const message = await client.conversations.v1
     .conversations(conversation.sid)
@@ -131,6 +146,11 @@ main().catch((error) => {
   process.exit(1);
 });
 ```
+
+> **Why these details matter (verified against Twilio docs):**
+> - The `conversationWithParticipants` `participant` array elements must be **stringified JSON with snake_case keys** (`messaging_binding.address`, `messaging_binding.projected_address`). Objects with dotted keys like `{ "messagingBinding.address": ... }` are only valid on the **individual** `participants.create()` endpoint, not the bulk create.
+> - Pass `messagingServiceSid` (MG…) so the conversation can route SMS/MMS. Uses the default Conversations Service (no service SID needed in the call).
+> - The conversation starts in `initializing` and becomes `active` asynchronously — never send a message immediately after create.
 
 - [ ] **Step 4: Run spike**
 
@@ -478,11 +498,17 @@ import { prisma } from "@/lib/prisma";
 import { OPT_IN_INTRO_TEXT } from "@/lib/consent";
 import {
   getTwilioClient,
-  getTwilioConversationsServiceSid,
   getTwilioFromNumber,
   getTwilioGroupProjectedAddress,
+  getTwilioMessagingServiceSid,
 } from "@/lib/twilio";
 
+// Twilio adds participants to a brand-new group conversation ASYNCHRONOUSLY
+// (state: initializing -> active). Listing participants right after create is
+// unreliable, so we do NOT eagerly map twilioParticipantSid here. Instead the
+// webhook backfills each participant's SID from the `ParticipantSid` field on
+// the first event we receive for them (see Task 7). For STOP removal we either
+// have the SID by then or fall back to looking it up by address.
 export async function maybeActivateTwilioGroup(conversationId: string): Promise<void> {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -505,18 +531,15 @@ export async function maybeActivateTwilioGroup(conversationId: string): Promise<
 
   const projectedAddress = conversation.twilioProjectedAddress ?? getTwilioGroupProjectedAddress();
   const client = getTwilioClient();
-  const serviceSid = getTwilioConversationsServiceSid();
 
   if (!conversation.twilioConversationSid) {
+    // `participant` MUST be an array of stringified JSON (snake_case keys).
     const twilioConversation = await client.conversations.v1.conversationWithParticipants.create({
       friendlyName: conversation.title ?? "CareText Group",
-      chatServiceSid: serviceSid,
+      messagingServiceSid: getTwilioMessagingServiceSid(),
       participant: [
-        ...active.map((p) => ({ "messagingBinding.address": p.contact.phone })),
-        {
-          "messagingBinding.projectedAddress": projectedAddress,
-          identity: "caretext-portal",
-        },
+        ...active.map((p) => JSON.stringify({ messaging_binding: { address: p.contact.phone } })),
+        JSON.stringify({ messaging_binding: { projected_address: projectedAddress } }),
       ],
     });
 
@@ -527,25 +550,11 @@ export async function maybeActivateTwilioGroup(conversationId: string): Promise<
         twilioProjectedAddress: projectedAddress,
       },
     });
-
-    const twilioParticipants = await client.conversations.v1
-      .conversations(twilioConversation.sid)
-      .participants.list();
-
-    for (const participant of conversation.participants) {
-      const match = twilioParticipants.find(
-        (tp) => tp.messagingBinding?.address === participant.contact.phone,
-      );
-      if (match) {
-        await prisma.conversationParticipant.update({
-          where: { id: participant.id },
-          data: { twilioParticipantSid: match.sid },
-        });
-      }
-    }
     return;
   }
 
+  // Conversation already exists: add newly-active participants individually.
+  // The individual participants.create endpoint DOES use dotted keys.
   const existing = await prisma.conversationParticipant.findMany({
     where: {
       conversationId,
@@ -556,14 +565,19 @@ export async function maybeActivateTwilioGroup(conversationId: string): Promise<
   });
 
   for (const participant of existing) {
-    const created = await client.conversations.v1
-      .conversations(conversation.twilioConversationSid)
-      .participants.create({ "messagingBinding.address": participant.contact.phone });
+    try {
+      const created = await client.conversations.v1
+        .conversations(conversation.twilioConversationSid)
+        .participants.create({ "messagingBinding.address": participant.contact.phone });
 
-    await prisma.conversationParticipant.update({
-      where: { id: participant.id },
-      data: { twilioParticipantSid: created.sid },
-    });
+      await prisma.conversationParticipant.update({
+        where: { id: participant.id },
+        data: { twilioParticipantSid: created.sid },
+      });
+    } catch (error) {
+      // Participant may already exist (e.g. retried). Leave SID for webhook backfill.
+      console.warn("Failed to add participant to Twilio conversation:", error);
+    }
   }
 }
 
@@ -910,19 +924,26 @@ export type ConversationsMessageAddedEvent = {
   ParticipantSid?: string;
 };
 
-export function parseConversationsEvent(raw: string): ConversationsMessageAddedEvent | null {
-  try {
-    const parsed = JSON.parse(raw) as Partial<ConversationsMessageAddedEvent>;
-    if (parsed.EventType !== "onMessageAdded") {
-      return null;
-    }
-    if (!parsed.ConversationSid || !parsed.MessageSid || !parsed.Author || parsed.Body === undefined) {
-      return null;
-    }
-    return parsed as ConversationsMessageAddedEvent;
-  } catch {
+// Conversations post-event webhooks are application/x-www-form-urlencoded
+// (NOT JSON). The caller parses the body with parseTwilioWebhookParams (reused
+// from lib/voice/webhook.ts) and passes the resulting record here.
+export function parseConversationsEvent(
+  params: Record<string, string>,
+): ConversationsMessageAddedEvent | null {
+  if (params.EventType !== "onMessageAdded") {
     return null;
   }
+  if (!params.ConversationSid || !params.MessageSid || !params.Author || params.Body === undefined) {
+    return null;
+  }
+  return {
+    EventType: "onMessageAdded",
+    ConversationSid: params.ConversationSid,
+    MessageSid: params.MessageSid,
+    Author: params.Author,
+    Body: params.Body,
+    ParticipantSid: params.ParticipantSid,
+  };
 }
 
 export function isProjectedAddressAuthor(author: string, projectedAddress: string): boolean {
@@ -930,7 +951,7 @@ export function isProjectedAddressAuthor(author: string, projectedAddress: strin
 }
 ```
 
-Create `lib/conversations-webhook.test.ts` with tests for `parseConversationsEvent` and `isProjectedAddressAuthor`.
+Create `lib/conversations-webhook.test.ts` with tests that pass plain objects (records) to `parseConversationsEvent` — e.g. a valid `onMessageAdded` record returns the event, a record with `EventType: "onConversationAdded"` returns `null`, and a record missing `MessageSid` returns `null` — plus tests for `isProjectedAddressAuthor`.
 
 Run: `npm run test -- lib/conversations-webhook.test.ts`
 
@@ -1008,6 +1029,7 @@ import {
 } from "@/lib/twilio";
 import {
   getWebhookRequestUrl,
+  parseTwilioWebhookParams,
   validateTwilioWebhookRequest,
 } from "@/lib/voice/webhook";
 import {
@@ -1017,21 +1039,19 @@ import {
 import { removeGroupParticipantOnStop, shouldTreatAsGroupStop } from "@/lib/group-conversations";
 
 export async function POST(request: Request) {
-  const rawBody = await request.text();
   const signature = request.headers.get("x-twilio-signature");
   const url = getWebhookRequestUrl(request);
+  // Form-urlencoded body — reuse the existing parser. Validate the signature
+  // against the parsed params (same pattern as the voice webhooks).
+  const params = await parseTwilioWebhookParams(request);
 
-  const valid = validateTwilioWebhookRequest({
-    signature,
-    url,
-    params: { body: rawBody },
-  });
+  const valid = validateTwilioWebhookRequest({ signature, url, params });
 
   if (!valid) {
     return NextResponse.json({ error: "Invalid signature." }, { status: 403 });
   }
 
-  const event = parseConversationsEvent(rawBody);
+  const event = parseConversationsEvent(params);
   if (!event) {
     return NextResponse.json({ ok: true, ignored: true });
   }
@@ -1071,6 +1091,16 @@ export async function POST(request: Request) {
   if (!participant) {
     console.warn("Inbound group message from unknown participant:", event.Author);
     return NextResponse.json({ ok: true, ignored: true });
+  }
+
+  // Backfill the Twilio participant SID the first time we see it (it was not
+  // available synchronously at group-creation time).
+  if (!participant.twilioParticipantSid && event.ParticipantSid) {
+    await prisma.conversationParticipant.update({
+      where: { id: participant.id },
+      data: { twilioParticipantSid: event.ParticipantSid },
+    });
+    participant.twilioParticipantSid = event.ParticipantSid;
   }
 
   if (shouldTreatAsGroupStop(event.Body)) {
