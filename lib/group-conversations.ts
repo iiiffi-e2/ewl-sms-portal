@@ -7,7 +7,7 @@ import {
   ParticipantStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { OPT_IN_INTRO_TEXT } from "@/lib/consent";
+import { OPT_IN_INTRO_TEXT, matchStopKeyword } from "@/lib/consent";
 import {
   getTwilioClient,
   getTwilioFromNumber,
@@ -212,4 +212,59 @@ export async function sendGroupConsentIntro(params: {
     ]);
     return { ok: false, error: message };
   }
+}
+
+export async function removeGroupParticipantOnStop(params: {
+  conversationId: string;
+  contactId: string;
+  twilioParticipantSid: string | null;
+  twilioConversationSid: string;
+  contactName: string | null;
+}): Promise<void> {
+  const client = getTwilioClient();
+
+  if (params.twilioParticipantSid) {
+    try {
+      await client.conversations.v1
+        .conversations(params.twilioConversationSid)
+        .participants(params.twilioParticipantSid)
+        .remove();
+    } catch {
+      // Participant may already be removed on Twilio side.
+    }
+  }
+
+  const displayName = params.contactName ?? "Contact";
+
+  await prisma.$transaction([
+    prisma.conversationParticipant.updateMany({
+      where: { conversationId: params.conversationId, contactId: params.contactId },
+      data: { status: ParticipantStatus.removed, removedAt: new Date() },
+    }),
+    prisma.contact.update({
+      where: { id: params.contactId },
+      data: { consentStatus: ConsentStatus.opted_out, consentUpdatedAt: new Date() },
+    }),
+    prisma.consentEvent.create({
+      data: {
+        contactId: params.contactId,
+        type: ConsentEventType.opted_out,
+        detail: `STOP in group ${params.conversationId}`,
+      },
+    }),
+    prisma.message.create({
+      data: {
+        conversationId: params.conversationId,
+        body: `${displayName} left the group (STOP).`,
+        direction: MessageDirection.inbound,
+        status: MessageStatus.received,
+        isSystemNote: true,
+        twilioConversationSid: params.twilioConversationSid,
+      },
+    }),
+  ]);
+}
+
+export function shouldTreatAsGroupStop(body: string): boolean {
+  return matchStopKeyword(body) !== null;
 }
