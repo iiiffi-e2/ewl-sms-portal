@@ -53,3 +53,15 @@ export const initiateCallSchema = z.object({
 export const updateCallLogSchema = z.object({
   status: z.enum(["canceled", "failed"]),
 });
+
+export const createGroupConversationSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  contactIds: z
+    .array(z.string().uuid())
+    .min(2, "Select at least 2 contacts.")
+    .max(9, "Groups support at most 9 external contacts."),
+});
+
+export const sendGroupMessageSchema = z.object({
+  body: z.string().trim().min(1, "Message cannot be empty.").max(1600, "Message is too long."),
+});
