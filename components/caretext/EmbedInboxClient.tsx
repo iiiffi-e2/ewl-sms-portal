@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { MessageThread } from "@/components/caretext/MessageThread";
 import { ConversationComposerArea } from "@/components/caretext/ConversationComposerArea";
+import { GroupComposerArea } from "@/components/caretext/GroupComposerArea";
+import { NewGroupConversationModal } from "@/components/caretext/NewGroupConversationModal";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
 import { EmbedConversationHeader } from "@/components/caretext/EmbedConversationHeader";
@@ -15,9 +17,22 @@ type Template = {
   body: string;
 };
 
+type ConversationParticipant = {
+  status: string;
+  contact: {
+    id: string;
+    name: string | null;
+    phone: string;
+    consentStatus: string;
+  };
+};
+
 type ConversationListResponse = {
   conversations: Array<{
     id: string;
+    type: "direct" | "group";
+    title?: string | null;
+    twilioConversationSid?: string | null;
     status: string;
     lastMessageAt: string;
     contact: {
@@ -30,7 +45,8 @@ type ConversationListResponse = {
       emergencyContactName: string | null;
       emergencyContactPhone: string | null;
       consentStatus: "none" | "opted_in" | "opted_out";
-    };
+    } | null;
+    participants?: ConversationParticipant[];
     assignedTo: { id: string; name: string } | null;
     messages: {
       id: string;
@@ -43,6 +59,9 @@ type ConversationListResponse = {
 
 type ConversationDetail = {
   id: string;
+  type: "direct" | "group";
+  title?: string | null;
+  twilioConversationSid?: string | null;
   status: string;
   contact: {
     id: string;
@@ -54,7 +73,8 @@ type ConversationDetail = {
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
     consentStatus: "none" | "opted_in" | "opted_out";
-  };
+  } | null;
+  participants?: ConversationParticipant[];
   messages: Array<{
     id: string;
     body: string;
@@ -83,6 +103,7 @@ type ConversationDetail = {
 export function EmbedInboxClient({ initialConversationId }: { initialConversationId?: string }) {
   const [search, setSearch] = useState("");
   const [isNewConversation, setIsNewConversation] = useState(false);
+  const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
   const [draftPhone, setDraftPhone] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null);
   const [conversations, setConversations] = useState<ConversationListResponse["conversations"]>([]);
@@ -135,11 +156,12 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
   }, [conversationId, loadConversationDetail, loadConversations]);
 
   const defaultPhone = useMemo(
-    () => activeConversation?.contact.phone ?? draftPhone,
+    () => activeConversation?.contact?.phone ?? draftPhone,
     [activeConversation, draftPhone],
   );
   const showConversationPane = isNewConversation || Boolean(conversationId);
   const isDraftConversation = isNewConversation && !activeConversation;
+  const isGroupConversation = activeConversation?.type === "group";
 
   const handleCreateConversation = useCallback(
     async (payload: { name: string; phone: string }) => {
@@ -173,6 +195,37 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       await loadConversations();
     },
     [loadConversations],
+  );
+
+  const handleGroupCreated = useCallback(
+    async (newConversationId: string) => {
+      setConversationId(newConversationId);
+      setIsNewConversation(false);
+      setDraftPhone("");
+      setIsNewGroupOpen(false);
+      await loadConversations();
+      await loadConversationDetail(newConversationId);
+    },
+    [loadConversations, loadConversationDetail],
+  );
+
+  const handleGroupSend = useCallback(
+    async (id: string, body: string) => {
+      const response = await fetch(`/api/conversations/${id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error ?? "Failed to send message.");
+      }
+
+      await loadConversations();
+      await loadConversationDetail(id);
+    },
+    [loadConversations, loadConversationDetail],
   );
 
   const handleSendMessage = useCallback(
@@ -228,9 +281,12 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       <div className="shrink-0 space-y-3">
         <EmbedConversationHeader
           conversationId={activeConversation?.id}
-          contactName={activeConversation?.contact.name}
-          phone={activeConversation?.contact.phone ?? (isDraftConversation ? draftPhone : undefined)}
+          contactName={activeConversation?.contact?.name}
+          phone={activeConversation?.contact?.phone ?? (isDraftConversation ? draftPhone : undefined)}
           isDraft={isDraftConversation}
+          isGroup={isGroupConversation}
+          title={activeConversation?.title}
+          participants={activeConversation?.participants}
         />
         {!isDraftConversation ? <CallBar /> : null}
       </div>
@@ -248,23 +304,39 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
               messages={activeConversation?.messages ?? []}
               callLogs={activeConversation?.callLogs ?? []}
               conversationId={activeConversation?.id}
+              isGroup={isGroupConversation}
+              participants={activeConversation?.participants}
             />
           </div>
           <div className="shrink-0">
-            <ConversationComposerArea
-              templates={templates}
-              isDraft={false}
-              conversationId={activeConversation?.id}
-              consentStatus={activeConversation?.contact.consentStatus}
-              defaultPhone={defaultPhone}
-              onPhoneChange={setDraftPhone}
-              onIntroSent={async () => {
-                if (!activeConversation) return;
-                await loadConversationDetail(activeConversation.id);
-                await loadConversations();
-              }}
-              onSend={handleSendMessage}
-            />
+            {activeConversation && activeConversation.type === "group" ? (
+              <GroupComposerArea
+                conversationId={activeConversation.id}
+                twilioConversationSid={activeConversation.twilioConversationSid ?? null}
+                participants={activeConversation.participants ?? []}
+                templates={templates}
+                onSend={(body) => handleGroupSend(activeConversation.id, body)}
+                onRefresh={() => {
+                  void loadConversationDetail(activeConversation.id);
+                  void loadConversations();
+                }}
+              />
+            ) : (
+              <ConversationComposerArea
+                templates={templates}
+                isDraft={false}
+                conversationId={activeConversation?.id}
+                consentStatus={activeConversation?.contact?.consentStatus}
+                defaultPhone={defaultPhone}
+                onPhoneChange={setDraftPhone}
+                onIntroSent={async () => {
+                  if (!activeConversation) return;
+                  await loadConversationDetail(activeConversation.id);
+                  await loadConversations();
+                }}
+                onSend={handleSendMessage}
+              />
+            )}
           </div>
         </>
       )}
@@ -285,6 +357,13 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
         onClick={startNewConversation}
       >
         New Conversation
+      </button>
+      <button
+        type="button"
+        className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700"
+        onClick={() => setIsNewGroupOpen(true)}
+      >
+        New Group
       </button>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ConversationList
@@ -337,6 +416,12 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
           )}
         </section>
       </div>
+
+      <NewGroupConversationModal
+        open={isNewGroupOpen}
+        onClose={() => setIsNewGroupOpen(false)}
+        onCreated={handleGroupCreated}
+      />
     </VoiceCallProvider>
   );
 }
