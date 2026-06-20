@@ -81,6 +81,7 @@ export async function POST(request: Request) {
       contactId: participant.contactId,
       twilioParticipantSid: participant.twilioParticipantSid,
       twilioConversationSid: conversation.twilioConversationSid!,
+      twilioMessageSid: event.MessageSid,
       contactName: participant.contact.name,
     });
     return NextResponse.json({ ok: true, stopHandled: true });

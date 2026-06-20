@@ -219,6 +219,7 @@ export async function removeGroupParticipantOnStop(params: {
   contactId: string;
   twilioParticipantSid: string | null;
   twilioConversationSid: string;
+  twilioMessageSid: string;
   contactName: string | null;
 }): Promise<void> {
   const client = getTwilioClient();
@@ -260,7 +261,12 @@ export async function removeGroupParticipantOnStop(params: {
         status: MessageStatus.received,
         isSystemNote: true,
         twilioConversationSid: params.twilioConversationSid,
+        twilioSid: params.twilioMessageSid,
       },
+    }),
+    prisma.conversation.update({
+      where: { id: params.conversationId },
+      data: { lastMessageAt: new Date() },
     }),
   ]);
 }
