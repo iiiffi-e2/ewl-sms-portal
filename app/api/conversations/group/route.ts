@@ -63,13 +63,17 @@ export async function POST(request: Request) {
     },
   });
 
+  const introErrors: Array<{ contactId: string; error: string }> = [];
   for (const participant of conversation.participants) {
     if (participant.status === ParticipantStatus.pending_intro) {
-      await sendGroupConsentIntro({
+      const introResult = await sendGroupConsentIntro({
         conversationId: conversation.id,
         contactId: participant.contactId,
         userId: authResult.session.user.id,
       });
+      if (!introResult.ok) {
+        introErrors.push({ contactId: participant.contactId, error: introResult.error });
+      }
     }
   }
 
@@ -84,5 +88,8 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ conversation: full }, { status: 201 });
+  return NextResponse.json(
+    { conversation: full, introErrors: introErrors.length > 0 ? introErrors : undefined },
+    { status: 201 },
+  );
 }

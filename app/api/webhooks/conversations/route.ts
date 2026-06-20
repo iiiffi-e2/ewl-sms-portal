@@ -1,4 +1,4 @@
-import { ConversationStatus, ConversationType, MessageDirection, MessageStatus } from "@prisma/client";
+import { ConversationStatus, ConversationType, MessageDirection, MessageStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTwilioGroupProjectedAddress } from "@/lib/twilio";
@@ -87,23 +87,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, stopHandled: true });
   }
 
-  await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        body: event.Body,
-        direction: MessageDirection.inbound,
-        status: MessageStatus.received,
-        twilioSid: event.MessageSid,
-        twilioConversationSid: event.ConversationSid,
-        authorPhone: event.Author,
-      },
-    }),
-    prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: new Date(), status: ConversationStatus.replied },
-    }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          body: event.Body,
+          direction: MessageDirection.inbound,
+          status: MessageStatus.received,
+          twilioSid: event.MessageSid,
+          twilioConversationSid: event.ConversationSid,
+          authorPhone: event.Author,
+        },
+      }),
+      prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date(), status: ConversationStatus.replied },
+      }),
+    ]);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ ok: true, deduplicated: true });
+    }
+    throw error;
+  }
 
   return NextResponse.json({ ok: true });
 }

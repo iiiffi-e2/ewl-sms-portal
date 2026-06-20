@@ -5,6 +5,7 @@ import {
   MessageDirection,
   MessageStatus,
   ParticipantStatus,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { OPT_IN_INTRO_TEXT, matchStopKeyword } from "@/lib/consent";
@@ -237,38 +238,45 @@ export async function removeGroupParticipantOnStop(params: {
 
   const displayName = params.contactName ?? "Contact";
 
-  await prisma.$transaction([
-    prisma.conversationParticipant.updateMany({
-      where: { conversationId: params.conversationId, contactId: params.contactId },
-      data: { status: ParticipantStatus.removed, removedAt: new Date() },
-    }),
-    prisma.contact.update({
-      where: { id: params.contactId },
-      data: { consentStatus: ConsentStatus.opted_out, consentUpdatedAt: new Date() },
-    }),
-    prisma.consentEvent.create({
-      data: {
-        contactId: params.contactId,
-        type: ConsentEventType.opted_out,
-        detail: `STOP in group ${params.conversationId}`,
-      },
-    }),
-    prisma.message.create({
-      data: {
-        conversationId: params.conversationId,
-        body: `${displayName} left the group (STOP).`,
-        direction: MessageDirection.inbound,
-        status: MessageStatus.received,
-        isSystemNote: true,
-        twilioConversationSid: params.twilioConversationSid,
-        twilioSid: params.twilioMessageSid,
-      },
-    }),
-    prisma.conversation.update({
-      where: { id: params.conversationId },
-      data: { lastMessageAt: new Date() },
-    }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.conversationParticipant.updateMany({
+        where: { conversationId: params.conversationId, contactId: params.contactId },
+        data: { status: ParticipantStatus.removed, removedAt: new Date() },
+      }),
+      prisma.contact.update({
+        where: { id: params.contactId },
+        data: { consentStatus: ConsentStatus.opted_out, consentUpdatedAt: new Date() },
+      }),
+      prisma.consentEvent.create({
+        data: {
+          contactId: params.contactId,
+          type: ConsentEventType.opted_out,
+          detail: `STOP in group ${params.conversationId}`,
+        },
+      }),
+      prisma.message.create({
+        data: {
+          conversationId: params.conversationId,
+          body: `${displayName} left the group (STOP).`,
+          direction: MessageDirection.inbound,
+          status: MessageStatus.received,
+          isSystemNote: true,
+          twilioConversationSid: params.twilioConversationSid,
+          twilioSid: params.twilioMessageSid,
+        },
+      }),
+      prisma.conversation.update({
+        where: { id: params.conversationId },
+        data: { lastMessageAt: new Date() },
+      }),
+    ]);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return;
+    }
+    throw error;
+  }
 }
 
 export function shouldTreatAsGroupStop(body: string): boolean {
