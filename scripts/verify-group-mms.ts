@@ -1,4 +1,9 @@
+import { loadEnvConfig } from "@next/env";
 import twilio from "twilio";
+
+// Standalone scripts don't get Next.js's automatic env loading, so load
+// .env / .env.local the same way the app does before reading process.env.
+loadEnvConfig(process.cwd());
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
