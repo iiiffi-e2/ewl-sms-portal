@@ -6,13 +6,16 @@ import { DeleteConversationModal } from "@/components/caretext/DeleteConversatio
 
 type Conversation = {
   id: string;
+  type?: "direct" | "group";
+  title?: string | null;
   status: string;
   lastMessageAt: string;
   contact: {
     name: string | null;
     phone: string;
     consentStatus?: "none" | "opted_in" | "opted_out";
-  };
+  } | null;
+  participants?: { status: string }[];
   assignedTo: {
     name: string;
   } | null;
@@ -43,15 +46,18 @@ export function ConversationList({
           <ConversationListItem
             key={conversation.id}
             id={conversation.id}
-            name={conversation.contact.name ?? ""}
-            phone={conversation.contact.phone}
+            name={conversation.contact?.name ?? ""}
+            phone={conversation.contact?.phone ?? ""}
             preview={conversation.messages[0]?.body ?? ""}
             status={conversation.status}
-            consentStatus={conversation.contact.consentStatus}
+            consentStatus={conversation.contact?.consentStatus}
             assignedTo={conversation.assignedTo?.name}
             lastMessageAt={conversation.lastMessageAt}
             selected={selectedConversationId === conversation.id}
             isAdmin={isAdmin}
+            isGroup={conversation.type === "group"}
+            title={conversation.title}
+            participantCount={conversation.participants?.length}
             onClick={() => onSelect(conversation.id)}
             onDelete={
               isAdmin && onDelete ? () => setPendingDelete(conversation) : undefined
@@ -66,7 +72,11 @@ export function ConversationList({
       </div>
       {pendingDelete ? (
         <DeleteConversationModal
-          contactLabel={pendingDelete.contact.name ?? pendingDelete.contact.phone}
+          contactLabel={
+            pendingDelete.type === "group"
+              ? pendingDelete.title ?? "this group"
+              : pendingDelete.contact?.name ?? pendingDelete.contact?.phone ?? "this conversation"
+          }
           onCancel={() => setPendingDelete(null)}
           onConfirm={async () => {
             await onDelete?.(pendingDelete.id);
