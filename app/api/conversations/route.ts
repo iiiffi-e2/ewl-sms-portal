@@ -23,6 +23,9 @@ export async function GET(request: Request) {
               { contact: { name: { contains: query, mode: "insensitive" } } },
               { contact: { phone: { contains: query, mode: "insensitive" } } },
               { contact: { facility: { contains: query, mode: "insensitive" } } },
+              { title: { contains: query, mode: "insensitive" } },
+              { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
+              { participants: { some: { contact: { phone: { contains: query } } } } },
             ],
           }
         : {}),
@@ -30,6 +33,9 @@ export async function GET(request: Request) {
     orderBy: { lastMessageAt: "desc" },
     include: {
       contact: true,
+      participants: {
+        include: { contact: true },
+      },
       assignedTo: {
         select: { id: true, name: true, email: true },
       },

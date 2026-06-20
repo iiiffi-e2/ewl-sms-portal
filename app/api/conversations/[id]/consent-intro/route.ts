@@ -30,6 +30,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const contact = conversation.contact;
 
+  if (!contact) {
+    return NextResponse.json({ error: "Conversation has no contact." }, { status: 400 });
+  }
+
   if (contact.consentStatus === ConsentStatus.opted_in) {
     return NextResponse.json({ ok: true, alreadyOptedIn: true, conversationId: conversation.id });
   }

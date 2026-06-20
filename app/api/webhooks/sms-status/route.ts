@@ -47,6 +47,18 @@ export async function POST(request: Request) {
         ? ConsentEventType.intro_delivered
         : ConsentEventType.intro_failed;
 
+    // The intro message may belong to a group conversation (the conversation's
+    // contactId is null for groups), so resolve the contact from the original
+    // intro event instead of the conversation.
+    const introEvent = await prisma.consentEvent.findFirst({
+      where: {
+        messageId: message.id,
+        type: { in: [ConsentEventType.intro_sent, ConsentEventType.group_intro_sent] },
+      },
+      select: { contactId: true },
+    });
+    const contactId = introEvent?.contactId ?? message.conversation.contactId;
+
     // Twilio may resend the same terminal status; only record the first one
     // so the audit log keeps one delivery event per intro message.
     const existingEvent = await prisma.consentEvent.findFirst({
@@ -54,10 +66,10 @@ export async function POST(request: Request) {
       select: { id: true },
     });
 
-    if (!existingEvent) {
+    if (contactId && !existingEvent) {
       await prisma.consentEvent.create({
         data: {
-          contactId: message.conversation.contactId,
+          contactId,
           messageId: message.id,
           type: eventType,
           twilioSid: message.twilioSid,
