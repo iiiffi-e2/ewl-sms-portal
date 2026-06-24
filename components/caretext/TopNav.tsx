@@ -26,9 +26,14 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
             Contacts
           </Link>
           {isAdmin ? (
-            <Link href="/templates" className="hover:text-foreground">
-              Templates
-            </Link>
+            <>
+              <Link href="/templates" className="hover:text-foreground">
+                Templates
+              </Link>
+              <Link href="/settings" className="hover:text-foreground">
+                Settings
+              </Link>
+            </>
           ) : null}
         </nav>
       </div>

@@ -13,10 +13,13 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();
+  const contactId = searchParams.get("contactId")?.trim();
+  const includeArchived = searchParams.get("includeArchived") === "1";
 
   const conversations = await prisma.conversation.findMany({
     where: {
-      archivedAt: null,
+      ...(!includeArchived ? { archivedAt: null } : {}),
+      ...(contactId ? { contactId } : {}),
       ...(query
         ? {
             OR: [
