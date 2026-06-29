@@ -105,13 +105,7 @@ type ConversationDetail = {
   }>;
 };
 
-export function DashboardClient({
-  initialConversationId,
-  groupsMode = false,
-}: {
-  initialConversationId?: string;
-  groupsMode?: boolean;
-}) {
+export function DashboardClient({ initialConversationId }: { initialConversationId?: string }) {
   const { data: session } = useSession();
   const [search, setSearch] = useState("");
   const [isNewConversation, setIsNewConversation] = useState(false);
@@ -125,15 +119,10 @@ export function DashboardClient({
   const hasInitializedInboundSnapshotRef = useRef(false);
 
   const loadConversations = useCallback(async () => {
-    const params = new URLSearchParams();
-    params.set("type", groupsMode ? "group" : "direct");
-    if (search) {
-      params.set("q", search);
-    }
-    const response = await fetch(`/api/conversations?${params.toString()}`);
+    const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
     const data: ConversationListResponse = await response.json();
     setConversations(data.conversations);
-  }, [search, groupsMode]);
+  }, [search]);
 
   const loadTemplates = useCallback(async () => {
     const response = await fetch("/api/templates");
@@ -348,27 +337,23 @@ export function DashboardClient({
               className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm"
               placeholder="Search name, phone, or facility"
             />
-            {!groupsMode ? (
-              <button
-                className="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white"
-                onClick={() => {
-                  setIsNewConversation(true);
-                  setConversationId(null);
-                  setDraftPhone("");
-                  setActiveConversation(null);
-                }}
-              >
-                New Conversation
-              </button>
-            ) : null}
-            {groupsMode ? (
-              <button
-                className="rounded-lg border border-indigo-200 bg-white px-3 py-2.5 text-sm font-semibold text-indigo-700"
-                onClick={() => setIsNewGroupOpen(true)}
-              >
-                New Group
-              </button>
-            ) : null}
+            <button
+              className="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white"
+              onClick={() => {
+                setIsNewConversation(true);
+                setConversationId(null);
+                setDraftPhone("");
+                setActiveConversation(null);
+              }}
+            >
+              New Conversation
+            </button>
+            <button
+              className="rounded-lg border border-indigo-200 bg-white px-3 py-2.5 text-sm font-semibold text-indigo-700"
+              onClick={() => setIsNewGroupOpen(true)}
+            >
+              New Group
+            </button>
             <ConversationList
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
@@ -526,27 +511,23 @@ export function DashboardClient({
             className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
             placeholder="Search name, phone, or facility"
           />
-          {!groupsMode ? (
-            <button
-              className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
-              onClick={() => {
-                setIsNewConversation(true);
-                setConversationId(null);
-                setDraftPhone("");
-                setActiveConversation(null);
-              }}
-            >
-              New Conversation
-            </button>
-          ) : null}
-          {groupsMode ? (
-            <button
-              className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700"
-              onClick={() => setIsNewGroupOpen(true)}
-            >
-              New Group
-            </button>
-          ) : null}
+          <button
+            className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
+            onClick={() => {
+              setIsNewConversation(true);
+              setConversationId(null);
+              setDraftPhone("");
+              setActiveConversation(null);
+            }}
+          >
+            New Conversation
+          </button>
+          <button
+            className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700"
+            onClick={() => setIsNewGroupOpen(true)}
+          >
+            New Group
+          </button>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ConversationList
               conversations={conversations}

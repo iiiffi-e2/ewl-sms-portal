@@ -1,14 +1,13 @@
 import { ConversationStatus, ConversationType, MessageDirection, MessageStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/api-auth";
+import { requireSession } from "@/lib/api-auth";
 import { isGroupReadyForMessages } from "@/lib/group-conversations";
 import { getTwilioClient, getTwilioGroupProjectedAddress } from "@/lib/twilio";
 import { sendGroupMessageSchema } from "@/lib/validators";
 
-// Group messaging is dark-launched: gated to admins until it ships in the main UI.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const authResult = await requireAdmin();
+  const authResult = await requireSession();
   if ("error" in authResult) {
     return authResult.error;
   }
