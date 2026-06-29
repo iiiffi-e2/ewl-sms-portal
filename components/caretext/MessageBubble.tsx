@@ -7,6 +7,8 @@ type MessageBubbleProps = {
   status: string;
   createdAt: string;
   reactions?: string[];
+  // Optional inbound bubble styling override (e.g. per-sender colors in groups).
+  inboundClassName?: string;
 };
 
 export function MessageBubble({
@@ -15,6 +17,7 @@ export function MessageBubble({
   status,
   createdAt,
   reactions = [],
+  inboundClassName,
 }: MessageBubbleProps) {
   const outbound = direction === "outbound";
 
@@ -24,7 +27,9 @@ export function MessageBubble({
         <div
           className={clsx(
             "rounded-2xl px-4 py-2 shadow-sm",
-            outbound ? "bg-indigo-600 text-white" : "bg-white border border-border text-foreground",
+            outbound
+              ? "bg-indigo-600 text-white"
+              : (inboundClassName ?? "bg-white border border-border text-foreground"),
           )}
         >
           <p className="whitespace-pre-wrap text-sm leading-relaxed">{body}</p>
