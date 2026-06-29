@@ -26,3 +26,27 @@ export function getTwilioFromNumber() {
 
   return from;
 }
+
+export function getTwilioConversationsServiceSid() {
+  const sid = process.env.TWILIO_CONVERSATIONS_SERVICE_SID;
+  if (!sid) {
+    throw new Error("TWILIO_CONVERSATIONS_SERVICE_SID is not configured.");
+  }
+  return sid;
+}
+
+export function getTwilioMessagingServiceSid() {
+  const sid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  if (!sid) {
+    throw new Error("TWILIO_MESSAGING_SERVICE_SID is not configured.");
+  }
+  return sid;
+}
+
+export function getTwilioGroupProjectedAddress() {
+  const address = process.env.TWILIO_GROUP_PROJECTED_ADDRESS;
+  if (!address) {
+    throw new Error("TWILIO_GROUP_PROJECTED_ADDRESS is not configured.");
+  }
+  return address;
+}

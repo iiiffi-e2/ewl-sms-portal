@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { StatusBadge } from "@/components/caretext/StatusBadge";
 import { DeleteConversationModal } from "@/components/caretext/DeleteConversationModal";
+import { GroupParticipantsPanel } from "@/components/caretext/GroupParticipantsPanel";
 import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
+
+type GroupParticipant = {
+  status: string;
+  contact: {
+    name: string | null;
+    phone: string;
+  };
+};
 
 type ConversationHeaderProps = {
   conversationId?: string;
@@ -15,6 +24,9 @@ type ConversationHeaderProps = {
   onStatusChange?: (status: string) => Promise<void>;
   isAdmin?: boolean;
   onDeleteConversation?: () => Promise<void>;
+  isGroup?: boolean;
+  title?: string | null;
+  participants?: GroupParticipant[];
 };
 
 const statuses = ["new", "sms_sent", "awaiting_reply", "replied", "escalated", "closed"];
@@ -29,6 +41,9 @@ export function ConversationHeader({
   onStatusChange,
   isAdmin,
   onDeleteConversation,
+  isGroup,
+  title,
+  participants,
 }: ConversationHeaderProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -36,7 +51,9 @@ export function ConversationHeader({
   const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const isStartingCall = callPhase === "connecting";
 
-  if (!phone) {
+  const deleteLabel = isGroup ? title || "this group" : contactName || phone || "";
+
+  if (!phone && !isGroup) {
     return (
       <div className="rounded-xl border border-border bg-white p-4">
         <p className="text-lg font-semibold">{isDraft ? "New Conversation" : "Conversation"}</p>
@@ -81,9 +98,20 @@ export function ConversationHeader({
         ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className={`min-w-0 ${isAdmin && conversationId && onDeleteConversation ? "pr-8" : ""}`}>
-            <p className="text-lg font-semibold">{contactName || phone}</p>
-            <p className="text-sm text-muted">{phone}</p>
-            {facility ? <p className="text-sm text-muted">Facility: {facility}</p> : null}
+            {isGroup ? (
+              <>
+                <p className="text-lg font-semibold">{title || "Group conversation"}</p>
+                <p className="text-sm text-muted">
+                  {(participants?.length ?? 0)} participant{(participants?.length ?? 0) === 1 ? "" : "s"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-semibold">{contactName || phone}</p>
+                <p className="text-sm text-muted">{phone}</p>
+                {facility ? <p className="text-sm text-muted">Facility: {facility}</p> : null}
+              </>
+            )}
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
             {status ? <StatusBadge status={status} /> : null}
@@ -108,25 +136,43 @@ export function ConversationHeader({
                 ))}
               </select>
             ) : null}
-            <button
-              type="button"
-              disabled={!conversationId || isCallActive || isStartingCall}
-              className="ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
-              onClick={async () => {
-                if (!conversationId || !phone) return;
-                await startCall({ conversationId, phone, contactName });
-              }}
-            >
-              {isStartingCall ? "Calling..." : "Call"}
-            </button>
-            {errorMessage ? <p className="w-full text-xs text-rose-600">{errorMessage}</p> : null}
+            {isGroup ? (
+              <button
+                type="button"
+                disabled
+                title="Group voice calling isn't available."
+                className="ml-auto min-w-[5.5rem] cursor-not-allowed rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white opacity-50 sm:ml-0"
+              >
+                Call
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!conversationId || isCallActive || isStartingCall}
+                className="ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
+                onClick={async () => {
+                  if (!conversationId || !phone) return;
+                  await startCall({ conversationId, phone, contactName });
+                }}
+              >
+                {isStartingCall ? "Calling..." : "Call"}
+              </button>
+            )}
+            {errorMessage && !isGroup ? (
+              <p className="w-full text-xs text-rose-600">{errorMessage}</p>
+            ) : null}
           </div>
         </div>
+        {isGroup && participants?.length ? (
+          <div className="mt-3">
+            <GroupParticipantsPanel participants={participants} />
+          </div>
+        ) : null}
       </div>
 
       {isDeleteModalOpen ? (
         <DeleteConversationModal
-          contactLabel={contactName || phone}
+          contactLabel={deleteLabel}
           onCancel={() => setIsDeleteModalOpen(false)}
           onConfirm={async () => {
             await onDeleteConversation?.();

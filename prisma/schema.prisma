@@ -46,6 +46,18 @@ enum ConsentEventType {
   intro_failed
   opted_out
   resubscribed
+  group_intro_sent
+}
+
+enum ConversationType {
+  direct
+  group
+}
+
+enum ParticipantStatus {
+  pending_intro
+  active
+  removed
 }
 
 enum CallDirection {
@@ -99,6 +111,7 @@ model Contact {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   conversations         Conversation[]
+  conversationParticipants ConversationParticipant[]
   consentEvents         ConsentEvent[]
 
   @@index([name])
@@ -107,25 +120,48 @@ model Contact {
 }
 
 model Conversation {
-  id            String             @id @default(uuid())
-  contactId     String
-  status        ConversationStatus @default(new)
-  assignedToId  String?
-  archivedAt    DateTime?
-  lastMessageAt DateTime           @default(now())
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  contact       Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  messages      Message[]
-  callLogs      CallLog[]
-  notes         InternalNote[]
+  id                      String             @id @default(uuid())
+  type                    ConversationType   @default(direct)
+  contactId               String?
+  title                   String?
+  twilioConversationSid   String?            @unique
+  twilioProjectedAddress  String?
+  status                  ConversationStatus @default(new)
+  assignedToId            String?
+  archivedAt              DateTime?
+  lastMessageAt           DateTime           @default(now())
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  contact                 Contact?           @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  assignedTo              User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages                Message[]
+  callLogs                CallLog[]
+  notes                   InternalNote[]
+  participants            ConversationParticipant[]
 
   @@index([contactId])
   @@index([assignedToId])
   @@index([archivedAt])
   @@index([lastMessageAt])
   @@index([status])
+  @@index([type])
+}
+
+model ConversationParticipant {
+  id                   String            @id @default(uuid())
+  conversationId       String
+  contactId            String
+  twilioParticipantSid String?
+  status               ParticipantStatus @default(pending_intro)
+  removedAt            DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  conversation         Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contact              Contact           @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@unique([conversationId, contactId])
+  @@index([conversationId])
+  @@index([contactId])
 }
 
 model Message {
@@ -138,6 +174,9 @@ model Message {
   twilioSid      String?          @unique
   errorMessage   String?
   isConsentIntro Boolean          @default(false)
+  authorPhone            String?
+  twilioConversationSid  String?
+  isSystemNote           Boolean          @default(false)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)

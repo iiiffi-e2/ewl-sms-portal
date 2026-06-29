@@ -11,11 +11,31 @@ type Message = {
   direction: "inbound" | "outbound";
   status: string;
   createdAt: string;
+  authorPhone?: string | null;
+  isSystemNote?: boolean;
 };
 
 type DisplayMessage = Message & {
   reactions: MessageReaction[];
 };
+
+type ThreadParticipant = {
+  contact: {
+    name: string | null;
+    phone: string;
+  };
+};
+
+function formatPhoneDisplay(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+}
 
 type CallLog = {
   id: string;
@@ -32,15 +52,36 @@ export function MessageThread({
   messages,
   callLogs = [],
   conversationId,
+  isGroup = false,
+  participants,
 }: {
   messages: Message[];
   callLogs?: CallLog[];
   conversationId?: string;
+  isGroup?: boolean;
+  participants?: ThreadParticipant[];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastAutoScrolledConversationIdRef = useRef<string | null>(null);
 
   const displayMessages = useMemo(() => attachReactionsToMessages(messages), [messages]);
+
+  const participantNameByPhone = useMemo(() => {
+    const map = new Map<string, string>();
+    (participants ?? []).forEach((participant) => {
+      if (participant.contact.name) {
+        map.set(participant.contact.phone, participant.contact.name);
+      }
+    });
+    return map;
+  }, [participants]);
+
+  const resolveAuthorLabel = (authorPhone?: string | null) => {
+    if (!authorPhone) {
+      return "Participant";
+    }
+    return participantNameByPhone.get(authorPhone) ?? formatPhoneDisplay(authorPhone);
+  };
 
   const threadItems = useMemo<ThreadItem[]>(() => {
     const items: ThreadItem[] = [
@@ -95,18 +136,29 @@ export function MessageThread({
     >
       {threadItems.map((item) =>
         item.kind === "message" ? (
-          <div
-            key={item.id}
-            className={item.message.reactions.length > 0 ? "pb-2" : undefined}
-          >
-            <MessageBubble
-              body={item.message.body}
-              direction={item.message.direction}
-              status={item.message.status}
-              createdAt={item.message.createdAt}
-              reactions={item.message.reactions.map((reaction) => reaction.emoji)}
-            />
-          </div>
+          item.message.isSystemNote ? (
+            <p key={item.id} className="px-4 py-1 text-center text-xs text-muted">
+              {item.message.body}
+            </p>
+          ) : (
+            <div
+              key={item.id}
+              className={item.message.reactions.length > 0 ? "pb-2" : undefined}
+            >
+              {isGroup && item.message.direction === "inbound" ? (
+                <p className="mb-1 pl-1 text-[11px] font-medium text-muted">
+                  {resolveAuthorLabel(item.message.authorPhone)}
+                </p>
+              ) : null}
+              <MessageBubble
+                body={item.message.body}
+                direction={item.message.direction}
+                status={item.message.status}
+                createdAt={item.message.createdAt}
+                reactions={item.message.reactions.map((reaction) => reaction.emoji)}
+              />
+            </div>
+          )
         ) : (
           <CallThreadBar
             key={item.id}

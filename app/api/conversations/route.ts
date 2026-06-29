@@ -1,4 +1,4 @@
-import { ConversationStatus } from "@prisma/client";
+import { ConversationStatus, ConversationType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
@@ -15,17 +15,26 @@ export async function GET(request: Request) {
   const query = searchParams.get("q")?.trim();
   const contactId = searchParams.get("contactId")?.trim();
   const includeArchived = searchParams.get("includeArchived") === "1";
+  const typeFilter = searchParams.get("type");
 
   const conversations = await prisma.conversation.findMany({
     where: {
       ...(!includeArchived ? { archivedAt: null } : {}),
       ...(contactId ? { contactId } : {}),
+      ...(typeFilter === "group"
+        ? { type: ConversationType.group }
+        : typeFilter === "direct"
+          ? { type: ConversationType.direct }
+          : {}),
       ...(query
         ? {
             OR: [
               { contact: { name: { contains: query, mode: "insensitive" } } },
               { contact: { phone: { contains: query, mode: "insensitive" } } },
               { contact: { facility: { contains: query, mode: "insensitive" } } },
+              { title: { contains: query, mode: "insensitive" } },
+              { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
+              { participants: { some: { contact: { phone: { contains: query } } } } },
             ],
           }
         : {}),
@@ -33,6 +42,9 @@ export async function GET(request: Request) {
     orderBy: { lastMessageAt: "desc" },
     include: {
       contact: true,
+      participants: {
+        include: { contact: true },
+      },
       assignedTo: {
         select: { id: true, name: true, email: true },
       },

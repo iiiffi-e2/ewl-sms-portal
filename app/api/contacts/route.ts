@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
@@ -41,19 +42,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const contact = await prisma.contact.create({
-    data: {
-      name: parsed.data.name ?? null,
-      phone: normalizePhoneNumber(parsed.data.phone),
-      facility: parsed.data.facility ?? null,
-      address: parsed.data.address ?? null,
-      notes: parsed.data.notes ?? null,
-      emergencyContactName: parsed.data.emergencyContactName ?? null,
-      emergencyContactPhone: parsed.data.emergencyContactPhone
-        ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
-        : null,
-    },
-  });
+  let phone: string;
+  let emergencyContactPhone: string | null;
+  try {
+    phone = normalizePhoneNumber(parsed.data.phone);
+    emergencyContactPhone = parsed.data.emergencyContactPhone
+      ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
+      : null;
+  } catch {
+    return NextResponse.json({ error: "Invalid phone number format." }, { status: 400 });
+  }
 
-  return NextResponse.json({ contact }, { status: 201 });
+  try {
+    const contact = await prisma.contact.create({
+      data: {
+        name: parsed.data.name ?? null,
+        phone,
+        facility: parsed.data.facility ?? null,
+        address: parsed.data.address ?? null,
+        notes: parsed.data.notes ?? null,
+        emergencyContactName: parsed.data.emergencyContactName ?? null,
+        emergencyContactPhone,
+      },
+    });
+
+    return NextResponse.json({ contact }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { error: "A contact with this phone number already exists." },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 }

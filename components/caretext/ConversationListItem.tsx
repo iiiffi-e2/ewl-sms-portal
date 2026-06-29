@@ -14,6 +14,9 @@ type ConversationListItemProps = {
   unread?: boolean;
   selected?: boolean;
   isAdmin?: boolean;
+  isGroup?: boolean;
+  title?: string | null;
+  participantCount?: number;
   onClick: () => void;
   onDelete?: () => void;
 };
@@ -21,6 +24,9 @@ type ConversationListItemProps = {
 export function ConversationListItem(props: ConversationListItemProps) {
   const optedOut = props.consentStatus === "opted_out";
   const showDelete = props.isAdmin && props.onDelete;
+  const primaryLabel = props.isGroup
+    ? props.title || "Group conversation"
+    : props.name || props.phone;
 
   return (
     <div
@@ -37,9 +43,34 @@ export function ConversationListItem(props: ConversationListItemProps) {
     >
       <button type="button" onClick={props.onClick} className="min-w-0 flex-1 space-y-1.5 text-left">
         <div className="flex items-center gap-2">
+          {props.isGroup ? (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4 shrink-0 text-slate-500"
+              aria-hidden="true"
+            >
+              <path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z" />
+            </svg>
+          ) : null}
           <p className={clsx("min-w-0 flex-1 truncate text-sm font-semibold", optedOut && "text-red-800")}>
-            {props.name || props.phone}
+            {primaryLabel}
           </p>
+          {props.isGroup ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-3 w-3"
+                aria-hidden="true"
+              >
+                <path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z" />
+              </svg>
+              {props.participantCount ?? 0}
+            </span>
+          ) : null}
           <span className="shrink-0 whitespace-nowrap text-[11px] leading-none text-muted">
             {formatRelativeTime(props.lastMessageAt)}
           </span>
@@ -60,7 +91,7 @@ export function ConversationListItem(props: ConversationListItemProps) {
       {showDelete ? (
         <button
           type="button"
-          aria-label={`Remove thread for ${props.name || props.phone}`}
+          aria-label={`Remove thread for ${primaryLabel}`}
           className="-mr-1 shrink-0 rounded-md p-1 text-slate-400 hover:bg-white/80 hover:text-rose-600"
           onClick={(event) => {
             event.stopPropagation();

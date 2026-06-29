@@ -89,9 +89,9 @@ export async function GET(request: Request) {
     direction: message.direction,
     status: message.status,
     body: message.body,
-    contactName: message.conversation.contact.name ?? "",
-    contactPhone: message.conversation.contact.phone,
-    facility: message.conversation.contact.facility ?? "",
+    contactName: message.conversation.contact?.name ?? message.conversation.title ?? "",
+    contactPhone: message.conversation.contact?.phone ?? message.authorPhone ?? "",
+    facility: message.conversation.contact?.facility ?? "",
     sentBy: message.direction === "outbound" ? (message.user?.name ?? "") : "",
     conversationId: message.conversationId,
   }));

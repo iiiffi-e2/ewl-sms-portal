@@ -15,6 +15,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       contact: true,
+      participants: {
+        include: { contact: true },
+        orderBy: { createdAt: "asc" },
+      },
       assignedTo: {
         select: { id: true, name: true, email: true },
       },
