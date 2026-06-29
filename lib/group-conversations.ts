@@ -45,7 +45,32 @@ export function buildDefaultGroupTitle(contacts: ContactLike[]): string {
 // webhook backfills each participant's SID from the `ParticipantSid` field on
 // the first event we receive for them (see Task 7). For STOP removal we either
 // have the SID by then or fall back to looking it up by address.
-export async function maybeActivateTwilioGroup(conversationId: string): Promise<void> {
+export type GroupActivationResult = { ok: true } | { ok: false; error: string; code?: number };
+
+// Twilio rejects creating a Group MMS whose participant set already maps to an
+// existing conversation (error 50438). Surface a clear, actionable message
+// instead of leaking the raw SDK error.
+function describeTwilioActivationError(error: unknown): { error: string; code?: number } {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? Number((error as { code?: unknown }).code)
+      : undefined;
+  if (code === 50438) {
+    return {
+      code,
+      error:
+        "Twilio already has a group MMS thread with this exact set of phone numbers. " +
+        "Group MMS allows only one thread per participant set — remove the existing " +
+        "Twilio conversation or change the participants, then try again.",
+    };
+  }
+  const message = error instanceof Error ? error.message : "Failed to activate group on Twilio.";
+  return { code, error: message };
+}
+
+export async function maybeActivateTwilioGroup(
+  conversationId: string,
+): Promise<GroupActivationResult> {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -57,27 +82,33 @@ export async function maybeActivateTwilioGroup(conversationId: string): Promise<
   });
 
   if (!conversation || conversation.type !== "group") {
-    return;
+    return { ok: true };
   }
 
   const active = conversation.participants;
   if (!canActivateTwilioGroup(active.length)) {
-    return;
+    return { ok: true };
   }
 
   const projectedAddress = conversation.twilioProjectedAddress ?? getTwilioGroupProjectedAddress();
   const client = getTwilioClient();
 
   if (!conversation.twilioConversationSid) {
-    // `participant` MUST be an array of stringified JSON (snake_case keys).
-    const twilioConversation = await client.conversations.v1.conversationWithParticipants.create({
-      friendlyName: conversation.title ?? "CareText Group",
-      messagingServiceSid: getTwilioMessagingServiceSid(),
-      participant: [
-        ...active.map((p) => JSON.stringify({ messaging_binding: { address: p.contact.phone } })),
-        JSON.stringify({ messaging_binding: { projected_address: projectedAddress } }),
-      ],
-    });
+    let twilioConversation;
+    try {
+      // `participant` MUST be an array of stringified JSON (snake_case keys).
+      twilioConversation = await client.conversations.v1.conversationWithParticipants.create({
+        friendlyName: conversation.title ?? "CareText Group",
+        messagingServiceSid: getTwilioMessagingServiceSid(),
+        participant: [
+          ...active.map((p) => JSON.stringify({ messaging_binding: { address: p.contact.phone } })),
+          JSON.stringify({ messaging_binding: { projected_address: projectedAddress } }),
+        ],
+      });
+    } catch (error) {
+      console.error("Failed to create Twilio group conversation:", error);
+      return { ok: false, ...describeTwilioActivationError(error) };
+    }
 
     await prisma.conversation.update({
       where: { id: conversationId },
@@ -86,7 +117,7 @@ export async function maybeActivateTwilioGroup(conversationId: string): Promise<
         twilioProjectedAddress: projectedAddress,
       },
     });
-    return;
+    return { ok: true };
   }
 
   // Conversation already exists: add newly-active participants individually.
@@ -115,6 +146,8 @@ export async function maybeActivateTwilioGroup(conversationId: string): Promise<
       console.warn("Failed to add participant to Twilio conversation:", error);
     }
   }
+
+  return { ok: true };
 }
 
 export async function sendGroupConsentIntro(params: {

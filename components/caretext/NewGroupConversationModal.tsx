@@ -110,21 +110,25 @@ export function NewGroupConversationModal({
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
 
-      if (response.status === 201) {
+      if (response.status === 201 && data?.conversation?.id) {
+        if (data.activationError) {
+          setError(data.activationError);
+          return;
+        }
         onCreated(data.conversation.id);
         return;
       }
 
-      if (response.status === 409 && data.code === "consent_opted_out") {
+      if (response.status === 409 && data?.code === "consent_opted_out") {
         setOptedOut(Array.isArray(data.contacts) ? data.contacts : []);
         setError(data.error ?? "One or more contacts have opted out.");
         return;
       }
 
       setError(
-        typeof data.error === "string" ? data.error : "Failed to create group conversation.",
+        typeof data?.error === "string" ? data.error : "Failed to create group conversation.",
       );
     } catch (submitError) {
       setError(

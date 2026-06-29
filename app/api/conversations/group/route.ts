@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     }
   }
 
-  await maybeActivateTwilioGroup(conversation.id);
+  const activation = await maybeActivateTwilioGroup(conversation.id);
 
   const full = await prisma.conversation.findUnique({
     where: { id: conversation.id },
@@ -90,7 +90,11 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json(
-    { conversation: full, introErrors: introErrors.length > 0 ? introErrors : undefined },
+    {
+      conversation: full,
+      introErrors: introErrors.length > 0 ? introErrors : undefined,
+      activationError: activation.ok ? undefined : activation.error,
+    },
     { status: 201 },
   );
 }
