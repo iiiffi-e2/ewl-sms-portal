@@ -1,4 +1,4 @@
-import { ConversationStatus } from "@prisma/client";
+import { ConversationStatus, ConversationType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
@@ -13,10 +13,16 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();
+  const typeFilter = searchParams.get("type");
 
   const conversations = await prisma.conversation.findMany({
     where: {
       archivedAt: null,
+      ...(typeFilter === "group"
+        ? { type: ConversationType.group }
+        : typeFilter === "direct"
+          ? { type: ConversationType.direct }
+          : {}),
       ...(query
         ? {
             OR: [

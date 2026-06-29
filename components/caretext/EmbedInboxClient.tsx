@@ -111,7 +111,12 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
   const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
 
   const loadConversations = useCallback(async () => {
-    const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
+    const params = new URLSearchParams();
+    params.set("type", "direct");
+    if (search) {
+      params.set("q", search);
+    }
+    const response = await fetch(`/api/conversations?${params.toString()}`);
     const data: ConversationListResponse = await response.json();
     setConversations(data.conversations);
   }, [search]);
@@ -357,13 +362,6 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
         onClick={startNewConversation}
       >
         New Conversation
-      </button>
-      <button
-        type="button"
-        className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700"
-        onClick={() => setIsNewGroupOpen(true)}
-      >
-        New Group
       </button>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ConversationList
