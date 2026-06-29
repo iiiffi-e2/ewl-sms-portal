@@ -1,7 +1,9 @@
+import { ConversationType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAdmin, requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { parseConversationStatus } from "@/lib/status";
+import { getTwilioClient } from "@/lib/twilio";
 import { updateConversationSchema } from "@/lib/validators";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -101,11 +103,27 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params;
   const existingConversation = await prisma.conversation.findUnique({
     where: { id },
-    select: { id: true, archivedAt: true },
+    select: { id: true, archivedAt: true, type: true, twilioConversationSid: true },
   });
 
   if (!existingConversation || existingConversation.archivedAt) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
+  // Group MMS threads are keyed by participant set on Twilio's side, so deleting
+  // the Twilio conversation frees that set for reuse. Best-effort: don't block the
+  // archive if Twilio already removed it (or the call fails).
+  if (
+    existingConversation.type === ConversationType.group &&
+    existingConversation.twilioConversationSid
+  ) {
+    try {
+      await getTwilioClient()
+        .conversations.v1.conversations(existingConversation.twilioConversationSid)
+        .remove();
+    } catch (error) {
+      console.error("Failed to delete Twilio group conversation:", error);
+    }
   }
 
   await prisma.conversation.update({
