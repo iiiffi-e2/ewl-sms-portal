@@ -18,6 +18,7 @@ type ConversationListItemProps = {
   title?: string | null;
   participantCount?: number;
   onClick: () => void;
+  onPrefetch?: () => void;
   onDelete?: () => void;
 };
 
@@ -41,7 +42,13 @@ export function ConversationListItem(props: ConversationListItemProps) {
             : "border-border bg-white hover:border-indigo-200 hover:bg-slate-50",
       )}
     >
-      <button type="button" onClick={props.onClick} className="min-w-0 flex-1 space-y-1.5 text-left">
+      <button
+        type="button"
+        onClick={props.onClick}
+        onMouseEnter={props.onPrefetch}
+        onFocus={props.onPrefetch}
+        className="min-w-0 flex-1 space-y-1.5 text-left"
+      >
         <div className="flex items-center gap-2">
           {props.isGroup ? (
             <svg

@@ -27,6 +27,7 @@ type ConversationListProps = {
   selectedConversationId?: string;
   isAdmin?: boolean;
   onSelect: (id: string) => void;
+  onPrefetch?: (id: string) => void;
   onDelete?: (id: string) => Promise<void>;
 };
 
@@ -35,6 +36,7 @@ export function ConversationList({
   selectedConversationId,
   isAdmin,
   onSelect,
+  onPrefetch,
   onDelete,
 }: ConversationListProps) {
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
@@ -59,6 +61,7 @@ export function ConversationList({
             title={conversation.title}
             participantCount={conversation.participants?.length}
             onClick={() => onSelect(conversation.id)}
+            onPrefetch={onPrefetch ? () => onPrefetch(conversation.id) : undefined}
             onDelete={
               isAdmin && onDelete ? () => setPendingDelete(conversation) : undefined
             }

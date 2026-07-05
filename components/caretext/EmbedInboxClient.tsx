@@ -10,6 +10,8 @@ import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
 import { EmbedConversationHeader } from "@/components/caretext/EmbedConversationHeader";
 import { EmbedNewConversationForm } from "@/components/caretext/EmbedNewConversationForm";
+import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
+import { useConversationDetail } from "@/hooks/useConversationDetail";
 
 type Template = {
   id: string;
@@ -57,58 +59,23 @@ type ConversationListResponse = {
   }>;
 };
 
-type ConversationDetail = {
-  id: string;
-  type: "direct" | "group";
-  title?: string | null;
-  twilioConversationSid?: string | null;
-  status: string;
-  contact: {
-    id: string;
-    name: string | null;
-    phone: string;
-    facility: string | null;
-    address: string | null;
-    notes: string | null;
-    emergencyContactName: string | null;
-    emergencyContactPhone: string | null;
-    consentStatus: "none" | "opted_in" | "opted_out";
-  } | null;
-  participants?: ConversationParticipant[];
-  messages: Array<{
-    id: string;
-    body: string;
-    direction: "inbound" | "outbound";
-    status: string;
-    createdAt: string;
-  }>;
-  notes: Array<{
-    id: string;
-    body: string;
-    createdAt: string;
-    user: { name: string | null };
-  }>;
-  callLogs: Array<{
-    id: string;
-    phone: string;
-    status: string;
-    durationSeconds: number | null;
-    startedAt: string;
-    endedAt: string | null;
-    outcome: string | null;
-    initiatedBy: { name: string | null } | null;
-  }>;
-};
-
 export function EmbedInboxClient({ initialConversationId }: { initialConversationId?: string }) {
   const [search, setSearch] = useState("");
   const [isNewConversation, setIsNewConversation] = useState(false);
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
   const [draftPhone, setDraftPhone] = useState("");
-  const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null);
   const [conversations, setConversations] = useState<ConversationListResponse["conversations"]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+  const {
+    conversationId,
+    activeConversation,
+    isLoadingDetail,
+    loadConversationDetail,
+    prefetchConversationDetail,
+    selectConversation,
+    clearConversationSelection,
+    setConversationDetail,
+  } = useConversationDetail(initialConversationId);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
@@ -122,27 +89,10 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     setTemplates(data.templates);
   }, []);
 
-  const loadConversationDetail = useCallback(async (id: string) => {
-    const response = await fetch(`/api/conversations/${id}`);
-    if (!response.ok) {
-      return;
-    }
-    const data = await response.json();
-    setActiveConversation(data.conversation);
-  }, []);
-
   useEffect(() => {
     void loadConversations();
     void loadTemplates();
   }, [loadConversations, loadTemplates]);
-
-  useEffect(() => {
-    if (!conversationId) {
-      setActiveConversation(null);
-      return;
-    }
-    void loadConversationDetail(conversationId);
-  }, [conversationId, loadConversationDetail]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -188,25 +138,23 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       }
 
       const data = await response.json();
-      setConversationId(data.conversation.id);
+      setConversationDetail(data.conversation);
       setIsNewConversation(false);
       setDraftPhone("");
-      setActiveConversation(data.conversation);
       await loadConversations();
     },
-    [loadConversations],
+    [loadConversations, setConversationDetail],
   );
 
   const handleGroupCreated = useCallback(
     async (newConversationId: string) => {
-      setConversationId(newConversationId);
+      selectConversation(newConversationId);
       setIsNewConversation(false);
       setDraftPhone("");
       setIsNewGroupOpen(false);
       await loadConversations();
-      await loadConversationDetail(newConversationId);
     },
-    [loadConversations, loadConversationDetail],
+    [loadConversations, selectConversation],
   );
 
   const handleGroupSend = useCallback(
@@ -254,27 +202,24 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       }
 
       const data = await response.json();
-      setConversationId(data.conversationId);
+      selectConversation(data.conversationId);
       setIsNewConversation(false);
       await loadConversations();
-      await loadConversationDetail(data.conversationId);
     },
-    [defaultPhone, loadConversationDetail, loadConversations],
+    [defaultPhone, loadConversations, selectConversation],
   );
 
   const resetConversationPane = useCallback(() => {
-    setConversationId(null);
+    clearConversationSelection();
     setIsNewConversation(false);
     setDraftPhone("");
-    setActiveConversation(null);
-  }, []);
+  }, [clearConversationSelection]);
 
   const startNewConversation = useCallback(() => {
     setIsNewConversation(true);
-    setConversationId(null);
+    clearConversationSelection();
     setDraftPhone("");
-    setActiveConversation(null);
-  }, []);
+  }, [clearConversationSelection]);
 
   const conversationPane = (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -300,13 +245,17 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       ) : (
         <>
           <div className="min-h-0 flex-1 overflow-hidden">
-            <MessageThread
-              messages={activeConversation?.messages ?? []}
-              callLogs={activeConversation?.callLogs ?? []}
-              conversationId={activeConversation?.id}
-              isGroup={isGroupConversation}
-              participants={activeConversation?.participants}
-            />
+            {isLoadingDetail ? (
+              <ConversationThreadLoading />
+            ) : (
+              <MessageThread
+                messages={activeConversation?.messages ?? []}
+                callLogs={activeConversation?.callLogs ?? []}
+                conversationId={conversationId ?? undefined}
+                isGroup={isGroupConversation}
+                participants={activeConversation?.participants}
+              />
+            )}
           </div>
           <div className="shrink-0">
             {activeConversation && activeConversation.type === "group" ? (
@@ -371,10 +320,11 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
           selectedConversationId={conversationId ?? undefined}
           isAdmin={false}
           onSelect={(id) => {
-            setConversationId(id);
+            selectConversation(id);
             setIsNewConversation(false);
             setDraftPhone("");
           }}
+          onPrefetch={prefetchConversationDetail}
         />
       </div>
     </>
