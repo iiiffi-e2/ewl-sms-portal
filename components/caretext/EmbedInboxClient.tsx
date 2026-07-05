@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { MessageThread } from "@/components/caretext/MessageThread";
 import { ConversationComposerArea } from "@/components/caretext/ConversationComposerArea";
@@ -12,6 +12,7 @@ import { EmbedConversationHeader } from "@/components/caretext/EmbedConversation
 import { EmbedNewConversationForm } from "@/components/caretext/EmbedNewConversationForm";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { useConversationDetail } from "@/hooks/useConversationDetail";
+import { getConversationsListRevision } from "@/lib/conversation-revision";
 
 type Template = {
   id: string;
@@ -76,11 +77,19 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     clearConversationSelection,
     setConversationDetail,
   } = useConversationDetail(initialConversationId);
+  const conversationsRevisionRef = useRef("");
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
     const data: ConversationListResponse = await response.json();
-    setConversations(data.conversations);
+    const revision = `${search}:${getConversationsListRevision(data.conversations)}`;
+    if (revision === conversationsRevisionRef.current) {
+      return;
+    }
+    conversationsRevisionRef.current = revision;
+    startTransition(() => {
+      setConversations(data.conversations);
+    });
   }, [search]);
 
   const loadTemplates = useCallback(async () => {
@@ -96,9 +105,9 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
 
   useEffect(() => {
     const interval = setInterval(() => {
-      loadConversations();
+      void loadConversations();
       if (conversationId) {
-        loadConversationDetail(conversationId);
+        void loadConversationDetail(conversationId);
       }
     }, 5000);
 
@@ -204,9 +213,27 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       const data = await response.json();
       selectConversation(data.conversationId);
       setIsNewConversation(false);
-      await loadConversations();
+      await Promise.all([
+        loadConversations(),
+        loadConversationDetail(data.conversationId),
+      ]);
     },
-    [defaultPhone, loadConversations, selectConversation],
+    [defaultPhone, loadConversations, loadConversationDetail, selectConversation],
+  );
+
+  const handleIntroSent = useCallback(async () => {
+    if (!activeConversation) return;
+    await loadConversationDetail(activeConversation.id);
+    await loadConversations();
+  }, [activeConversation, loadConversationDetail, loadConversations]);
+
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      selectConversation(id);
+      setIsNewConversation(false);
+      setDraftPhone("");
+    },
+    [selectConversation],
   );
 
   const resetConversationPane = useCallback(() => {
@@ -278,11 +305,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
                 consentStatus={activeConversation?.contact?.consentStatus}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
-                onIntroSent={async () => {
-                  if (!activeConversation) return;
-                  await loadConversationDetail(activeConversation.id);
-                  await loadConversations();
-                }}
+                onIntroSent={handleIntroSent}
                 onSend={handleSendMessage}
               />
             )}
@@ -319,11 +342,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
           conversations={conversations}
           selectedConversationId={conversationId ?? undefined}
           isAdmin={false}
-          onSelect={(id) => {
-            selectConversation(id);
-            setIsNewConversation(false);
-            setDraftPhone("");
-          }}
+          onSelect={handleSelectConversation}
           onPrefetch={prefetchConversationDetail}
         />
       </div>

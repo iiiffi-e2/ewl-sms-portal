@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { TemplateSelector } from "@/components/caretext/TemplateSelector";
 
 type Template = {
@@ -17,7 +17,7 @@ type MessageComposerProps = {
   onSend: (payload: { body: string; phone: string; conversationId?: string }) => Promise<void>;
 };
 
-export function MessageComposer({
+export const MessageComposer = memo(function MessageComposer({
   templates,
   conversationId,
   defaultPhone,
@@ -78,4 +78,4 @@ export function MessageComposer({
       </div>
     </div>
   );
-}
+});

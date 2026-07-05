@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { MessageBubble } from "@/components/caretext/MessageBubble";
 import { CallThreadBar } from "@/components/caretext/CallThreadBar";
 import { attachReactionsToMessages, type MessageReaction } from "@/lib/message-reactions";
@@ -61,7 +61,7 @@ type ThreadItem =
   | { kind: "message"; id: string; at: string; message: DisplayMessage }
   | { kind: "call"; id: string; at: string; callLog: CallLog };
 
-export function MessageThread({
+export const MessageThread = memo(function MessageThread({
   messages,
   callLogs = [],
   conversationId,
@@ -214,4 +214,4 @@ export function MessageThread({
       )}
     </div>
   );
-}
+});

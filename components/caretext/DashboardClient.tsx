@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useSession } from "next-auth/react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
@@ -15,6 +15,7 @@ import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { useConversationDetail } from "@/hooks/useConversationDetail";
+import { getConversationsListRevision } from "@/lib/conversation-revision";
 
 type Template = {
   id: string;
@@ -84,11 +85,19 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   } = useConversationDetail(initialConversationId);
   const seenInboundMessageIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedInboundSnapshotRef = useRef(false);
+  const conversationsRevisionRef = useRef("");
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
     const data: ConversationListResponse = await response.json();
-    setConversations(data.conversations);
+    const revision = `${search}:${getConversationsListRevision(data.conversations)}`;
+    if (revision === conversationsRevisionRef.current) {
+      return;
+    }
+    conversationsRevisionRef.current = revision;
+    startTransition(() => {
+      setConversations(data.conversations);
+    });
   }, [search]);
 
   const loadTemplates = useCallback(async () => {
@@ -104,9 +113,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
   useEffect(() => {
     const interval = setInterval(() => {
-      loadConversations();
+      void loadConversations();
       if (conversationId) {
-        loadConversationDetail(conversationId);
+        void loadConversationDetail(conversationId);
       }
     }, 5000);
 
@@ -248,6 +257,57 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     [loadConversations, loadConversationDetail],
   );
 
+  const handleSendMessage = useCallback(
+    async ({
+      body,
+      phone,
+      conversationId: targetConversationId,
+    }: {
+      body: string;
+      phone: string;
+      conversationId?: string;
+    }) => {
+      const response = await fetch("/api/messages/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body,
+          phone: targetConversationId ? defaultPhone : phone,
+          conversationId: targetConversationId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error ?? "Failed to send message.");
+      }
+
+      const data = await response.json();
+      selectConversation(data.conversationId);
+      setIsNewConversation(false);
+      await Promise.all([
+        loadConversations(),
+        loadConversationDetail(data.conversationId),
+      ]);
+    },
+    [defaultPhone, loadConversations, loadConversationDetail, selectConversation],
+  );
+
+  const handleIntroSent = useCallback(async () => {
+    if (!activeConversation) return;
+    await loadConversationDetail(activeConversation.id);
+    await loadConversations();
+  }, [activeConversation, loadConversationDetail, loadConversations]);
+
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      selectConversation(id);
+      setIsNewConversation(false);
+      setDraftPhone("");
+    },
+    [selectConversation],
+  );
+
   const handleDeleteConversation = useCallback(
     async (conversationIdToDelete: string) => {
       const response = await fetch(`/api/conversations/${conversationIdToDelete}`, {
@@ -301,11 +361,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
               isAdmin={isAdmin}
-              onSelect={(id) => {
-                selectConversation(id);
-                setIsNewConversation(false);
-                setDraftPhone("");
-              }}
+              onSelect={handleSelectConversation}
               onPrefetch={prefetchConversationDetail}
               onDelete={handleDeleteConversation}
             />
@@ -388,32 +444,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 consentStatus={activeConversation?.contact?.consentStatus}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
-                onIntroSent={async () => {
-                  if (!activeConversation) return;
-                  await loadConversationDetail(activeConversation.id);
-                  await loadConversations();
-                }}
-                onSend={async ({ body, phone, conversationId: targetConversationId }) => {
-                  const response = await fetch("/api/messages/send", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      body,
-                      phone: targetConversationId ? defaultPhone : phone,
-                      conversationId: targetConversationId,
-                    }),
-                  });
-
-                  if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error ?? "Failed to send message.");
-                  }
-
-                  const data = await response.json();
-                  selectConversation(data.conversationId);
-                  setIsNewConversation(false);
-                  await loadConversations();
-                }}
+                onIntroSent={handleIntroSent}
+                onSend={handleSendMessage}
                   />
                   )}
                 </div>
@@ -477,11 +509,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
               isAdmin={isAdmin}
-              onSelect={(id) => {
-                selectConversation(id);
-                setIsNewConversation(false);
-                setDraftPhone("");
-              }}
+              onSelect={handleSelectConversation}
               onPrefetch={prefetchConversationDetail}
               onDelete={handleDeleteConversation}
             />
@@ -554,32 +582,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 consentStatus={activeConversation?.contact?.consentStatus}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
-                onIntroSent={async () => {
-                  if (!activeConversation) return;
-                  await loadConversationDetail(activeConversation.id);
-                  await loadConversations();
-                }}
-                onSend={async ({ body, phone, conversationId: targetConversationId }) => {
-                  const response = await fetch("/api/messages/send", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      body,
-                      phone: targetConversationId ? defaultPhone : phone,
-                      conversationId: targetConversationId,
-                    }),
-                  });
-
-                  if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error ?? "Failed to send message.");
-                  }
-
-                  const data = await response.json();
-                  selectConversation(data.conversationId);
-                  setIsNewConversation(false);
-                  await loadConversations();
-                }}
+                onIntroSent={handleIntroSent}
+                onSend={handleSendMessage}
               />
               )}
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, startTransition } from "react";
+import { getConversationDetailRevision } from "@/lib/conversation-revision";
 
 export type ConversationDetail = {
   id: string;
@@ -55,6 +56,14 @@ export type ConversationDetail = {
   }>;
 };
 
+type CacheEntry = {
+  conversation: ConversationDetail;
+  fetchedAt: number;
+  revision: string;
+};
+
+const DETAIL_STALE_MS = 30_000;
+
 export function useConversationDetail(initialConversationId?: string) {
   const [conversationId, setConversationIdState] = useState<string | null>(
     initialConversationId ?? null,
@@ -63,7 +72,7 @@ export function useConversationDetail(initialConversationId?: string) {
     null,
   );
 
-  const cacheRef = useRef(new Map<string, ConversationDetail>());
+  const cacheRef = useRef(new Map<string, CacheEntry>());
   const selectedIdRef = useRef<string | null>(conversationId);
   const detailAbortRef = useRef<AbortController | null>(null);
   const prefetchingRef = useRef(new Set<string>());
@@ -71,60 +80,106 @@ export function useConversationDetail(initialConversationId?: string) {
   const isLoadingDetail =
     conversationId !== null && activeConversation?.id !== conversationId;
 
-  const cacheConversation = useCallback((conversation: ConversationDetail) => {
-    cacheRef.current.set(conversation.id, conversation);
+  const writeCache = useCallback((conversation: ConversationDetail) => {
+    cacheRef.current.set(conversation.id, {
+      conversation,
+      fetchedAt: Date.now(),
+      revision: getConversationDetailRevision(conversation),
+    });
   }, []);
 
-  const loadConversationDetail = useCallback(async (id: string) => {
-    detailAbortRef.current?.abort();
-    const controller = new AbortController();
-    detailAbortRef.current = controller;
+  const applyConversationIfChanged = useCallback(
+    (conversation: ConversationDetail, options?: { urgent?: boolean }) => {
+      const revision = getConversationDetailRevision(conversation);
+      writeCache(conversation);
 
-    try {
-      const response = await fetch(`/api/conversations/${id}`, { signal: controller.signal });
-      if (!response.ok) {
-        return;
+      const update = () => {
+        setActiveConversationState((current) => {
+          if (
+            current?.id === conversation.id &&
+            getConversationDetailRevision(current) === revision
+          ) {
+            return current;
+          }
+          return conversation;
+        });
+      };
+
+      if (options?.urgent) {
+        update();
+      } else {
+        startTransition(update);
       }
+    },
+    [writeCache],
+  );
 
-      const data = await response.json();
-      const conversation = data.conversation as ConversationDetail;
-      cacheRef.current.set(id, conversation);
+  const loadConversationDetail = useCallback(
+    async (id: string) => {
+      detailAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailAbortRef.current = controller;
 
-      if (selectedIdRef.current === id) {
-        setActiveConversationState(conversation);
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
-      throw error;
-    }
-  }, []);
-
-  const prefetchConversationDetail = useCallback((id: string) => {
-    if (cacheRef.current.has(id) || prefetchingRef.current.has(id)) {
-      return;
-    }
-
-    prefetchingRef.current.add(id);
-
-    void fetch(`/api/conversations/${id}`)
-      .then(async (response) => {
+      try {
+        const response = await fetch(`/api/conversations/${id}`, { signal: controller.signal });
         if (!response.ok) {
           return;
         }
+
         const data = await response.json();
-        cacheRef.current.set(id, data.conversation as ConversationDetail);
-      })
-      .finally(() => {
-        prefetchingRef.current.delete(id);
-      });
-  }, []);
+        const conversation = data.conversation as ConversationDetail;
+
+        if (selectedIdRef.current === id) {
+          applyConversationIfChanged(conversation);
+        } else {
+          writeCache(conversation);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        throw error;
+      }
+    },
+    [applyConversationIfChanged, writeCache],
+  );
+
+  const prefetchConversationDetail = useCallback(
+    (id: string) => {
+      const cached = cacheRef.current.get(id);
+      if (cached && Date.now() - cached.fetchedAt < DETAIL_STALE_MS) {
+        return;
+      }
+      if (prefetchingRef.current.has(id)) {
+        return;
+      }
+
+      prefetchingRef.current.add(id);
+
+      void fetch(`/api/conversations/${id}`)
+        .then(async (response) => {
+          if (!response.ok) {
+            return;
+          }
+          const data = await response.json();
+          const conversation = data.conversation as ConversationDetail;
+          writeCache(conversation);
+
+          if (selectedIdRef.current === id) {
+            applyConversationIfChanged(conversation);
+          }
+        })
+        .finally(() => {
+          prefetchingRef.current.delete(id);
+        });
+    },
+    [applyConversationIfChanged, writeCache],
+  );
 
   const selectConversation = useCallback((id: string) => {
     setConversationIdState(id);
     const cached = cacheRef.current.get(id);
-    setActiveConversationState(cached ?? null);
+    setActiveConversationState(cached?.conversation ?? null);
   }, []);
 
   const clearConversationSelection = useCallback(() => {
@@ -135,11 +190,11 @@ export function useConversationDetail(initialConversationId?: string) {
 
   const setConversationDetail = useCallback(
     (conversation: ConversationDetail) => {
-      cacheConversation(conversation);
+      writeCache(conversation);
       setConversationIdState(conversation.id);
       setActiveConversationState(conversation);
     },
-    [cacheConversation],
+    [writeCache],
   );
 
   const updateActiveConversation = useCallback(
@@ -149,11 +204,11 @@ export function useConversationDetail(initialConversationId?: string) {
           return current;
         }
         const updated = updater(current);
-        cacheRef.current.set(updated.id, updated);
+        writeCache(updated);
         return updated;
       });
     },
-    [],
+    [writeCache],
   );
 
   const removeCachedConversation = useCallback((id: string) => {
@@ -168,6 +223,11 @@ export function useConversationDetail(initialConversationId?: string) {
     if (!conversationId) {
       detailAbortRef.current?.abort();
       setActiveConversationState(null);
+      return;
+    }
+
+    const cached = cacheRef.current.get(conversationId);
+    if (cached && Date.now() - cached.fetchedAt < DETAIL_STALE_MS) {
       return;
     }
 

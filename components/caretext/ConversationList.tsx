@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ConversationListItem } from "@/components/caretext/ConversationListItem";
 import { DeleteConversationModal } from "@/components/caretext/DeleteConversationModal";
 
@@ -31,7 +31,7 @@ type ConversationListProps = {
   onDelete?: (id: string) => Promise<void>;
 };
 
-export function ConversationList({
+export const ConversationList = memo(function ConversationList({
   conversations,
   selectedConversationId,
   isAdmin,
@@ -89,4 +89,4 @@ export function ConversationList({
       ) : null}
     </>
   );
-}
+});
