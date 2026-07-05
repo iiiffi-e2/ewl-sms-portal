@@ -60,8 +60,15 @@ type ConversationListResponse = {
   }>;
 };
 
+const POLL_INTERVAL_MS = 5000;
+const SEARCH_DEBOUNCE_MS = 300;
+// Even without new messages, refresh the open thread occasionally so delivery
+// status transitions (sent -> delivered) still surface within a bounded window.
+const DETAIL_SAFETY_REFRESH_MS = 20_000;
+
 export function EmbedInboxClient({ initialConversationId }: { initialConversationId?: string }) {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isNewConversation, setIsNewConversation] = useState(false);
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
   const [draftPhone, setDraftPhone] = useState("");
@@ -78,19 +85,23 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     setConversationDetail,
   } = useConversationDetail(initialConversationId);
   const conversationsRevisionRef = useRef("");
+  const detailLastFetchAtRef = useRef(0);
+  const renderedDetailLastMessageIdRef = useRef<string | null>(null);
 
   const loadConversations = useCallback(async () => {
-    const response = await fetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ""}`);
+    const response = await fetch(
+      `/api/conversations${debouncedSearch ? `?q=${encodeURIComponent(debouncedSearch)}` : ""}`,
+    );
     const data: ConversationListResponse = await response.json();
-    const revision = `${search}:${getConversationsListRevision(data.conversations)}`;
-    if (revision === conversationsRevisionRef.current) {
-      return;
+    const revision = `${debouncedSearch}:${getConversationsListRevision(data.conversations)}`;
+    if (revision !== conversationsRevisionRef.current) {
+      conversationsRevisionRef.current = revision;
+      startTransition(() => {
+        setConversations(data.conversations);
+      });
     }
-    conversationsRevisionRef.current = revision;
-    startTransition(() => {
-      setConversations(data.conversations);
-    });
-  }, [search]);
+    return data.conversations;
+  }, [debouncedSearch]);
 
   const loadTemplates = useCallback(async () => {
     const response = await fetch("/api/templates");
@@ -99,19 +110,63 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
   }, []);
 
   useEffect(() => {
-    void loadConversations();
-    void loadTemplates();
-  }, [loadConversations, loadTemplates]);
+    const timeout = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [search]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      void loadConversations();
-      if (conversationId) {
+    renderedDetailLastMessageIdRef.current =
+      activeConversation?.messages.at(-1)?.id ?? null;
+  }, [activeConversation]);
+
+  useEffect(() => {
+    detailLastFetchAtRef.current = Date.now();
+  }, [conversationId]);
+
+  useEffect(() => {
+    void loadTemplates();
+  }, [loadTemplates]);
+
+  useEffect(() => {
+    void loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    const tick = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      const list = await loadConversations();
+
+      if (!conversationId || !list) {
+        return;
+      }
+
+      const listConversation = list.find((conversation) => conversation.id === conversationId);
+      const newestMessageId = listConversation?.messages[0]?.id ?? null;
+      const hasNewMessage =
+        newestMessageId !== null && newestMessageId !== renderedDetailLastMessageIdRef.current;
+      const safetyElapsed = Date.now() - detailLastFetchAtRef.current >= DETAIL_SAFETY_REFRESH_MS;
+
+      if (hasNewMessage || safetyElapsed) {
+        detailLastFetchAtRef.current = Date.now();
         void loadConversationDetail(conversationId);
       }
-    }, 5000);
+    };
 
-    return () => clearInterval(interval);
+    const interval = setInterval(tick, POLL_INTERVAL_MS);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void tick();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [conversationId, loadConversationDetail, loadConversations]);
 
   const defaultPhone = useMemo(
