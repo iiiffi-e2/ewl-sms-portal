@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { memo } from "react";
 import { formatMessageTime } from "@/lib/format";
 
 type MessageBubbleProps = {
@@ -11,7 +12,7 @@ type MessageBubbleProps = {
   inboundClassName?: string;
 };
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   body,
   direction,
   status,
@@ -60,4 +61,4 @@ export function MessageBubble({
       </div>
     </div>
   );
-}
+});

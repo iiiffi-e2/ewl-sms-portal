@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageBubble } from "@/components/caretext/MessageBubble";
 import { CallThreadBar } from "@/components/caretext/CallThreadBar";
 import { attachReactionsToMessages, type MessageReaction } from "@/lib/message-reactions";
@@ -17,6 +17,7 @@ type Message = {
 
 type DisplayMessage = Message & {
   reactions: MessageReaction[];
+  reactionEmojis: string[];
 };
 
 type ThreadParticipant = {
@@ -61,6 +62,11 @@ type ThreadItem =
   | { kind: "message"; id: string; at: string; message: DisplayMessage }
   | { kind: "call"; id: string; at: string; callLog: CallLog };
 
+// Only render the most recent slice of a thread so long histories don't
+// create huge DOM trees (which slow down paint and even textarea typing).
+const INITIAL_VISIBLE_ITEMS = 50;
+const LOAD_MORE_STEP = 50;
+
 export const MessageThread = memo(function MessageThread({
   messages,
   callLogs = [],
@@ -76,8 +82,17 @@ export const MessageThread = memo(function MessageThread({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastAutoScrolledConversationIdRef = useRef<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ITEMS);
+  const pendingScrollRestoreRef = useRef<number | null>(null);
 
-  const displayMessages = useMemo(() => attachReactionsToMessages(messages), [messages]);
+  const displayMessages = useMemo<DisplayMessage[]>(
+    () =>
+      attachReactionsToMessages(messages).map((message) => ({
+        ...message,
+        reactionEmojis: message.reactions.map((reaction) => reaction.emoji),
+      })),
+    [messages],
+  );
 
   const participantNameByPhone = useMemo(() => {
     const map = new Map<string, string>();
@@ -139,6 +154,33 @@ export const MessageThread = memo(function MessageThread({
     return items.sort((left, right) => new Date(left.at).getTime() - new Date(right.at).getTime());
   }, [callLogs, displayMessages]);
 
+  const visibleItems = useMemo(
+    () =>
+      threadItems.length > visibleCount ? threadItems.slice(-visibleCount) : threadItems,
+    [threadItems, visibleCount],
+  );
+  const hasOlderItems = threadItems.length > visibleItems.length;
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_ITEMS);
+  }, [conversationId]);
+
+  const handleLoadEarlier = () => {
+    const container = containerRef.current;
+    pendingScrollRestoreRef.current = container
+      ? container.scrollHeight - container.scrollTop
+      : null;
+    setVisibleCount((count) => count + LOAD_MORE_STEP);
+  };
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (container && pendingScrollRestoreRef.current !== null) {
+      container.scrollTop = container.scrollHeight - pendingScrollRestoreRef.current;
+      pendingScrollRestoreRef.current = null;
+    }
+  }, [visibleItems]);
+
   useEffect(() => {
     if (!conversationId || !threadItems.length) {
       return;
@@ -171,7 +213,16 @@ export const MessageThread = memo(function MessageThread({
       ref={containerRef}
       className="flex h-full flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-slate-50 p-4"
     >
-      {threadItems.map((item) =>
+      {hasOlderItems ? (
+        <button
+          type="button"
+          onClick={handleLoadEarlier}
+          className="mx-auto shrink-0 rounded-full border border-border bg-white px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Load earlier messages
+        </button>
+      ) : null}
+      {visibleItems.map((item) =>
         item.kind === "message" ? (
           item.message.isSystemNote ? (
             <p key={item.id} className="px-4 py-1 text-center text-xs text-muted">
@@ -194,7 +245,7 @@ export const MessageThread = memo(function MessageThread({
                 direction={item.message.direction}
                 status={item.message.status}
                 createdAt={item.message.createdAt}
-                reactions={item.message.reactions.map((reaction) => reaction.emoji)}
+                reactions={item.message.reactionEmojis}
                 inboundClassName={
                   isGroup && item.message.direction === "inbound"
                     ? resolveSenderColor(item.message.authorPhone).bubble
