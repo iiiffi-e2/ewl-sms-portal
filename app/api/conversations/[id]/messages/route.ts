@@ -6,6 +6,48 @@ import { isGroupReadyForMessages } from "@/lib/group-conversations";
 import { getTwilioClient, getTwilioGroupProjectedAddress } from "@/lib/twilio";
 import { sendGroupMessageSchema } from "@/lib/validators";
 
+const OLDER_MESSAGES_DEFAULT_LIMIT = 50;
+const OLDER_MESSAGES_MAX_LIMIT = 100;
+
+// Cursor-paginated fetch of messages older than a given message id, used by the
+// thread's "Load earlier messages" control. Returns ascending (oldest-first).
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const authResult = await requireSession();
+  if ("error" in authResult) {
+    return authResult.error;
+  }
+
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+  const cursor = searchParams.get("cursor");
+  const limitParam = Number(searchParams.get("limit"));
+  const limit =
+    Number.isFinite(limitParam) && limitParam > 0
+      ? Math.min(Math.trunc(limitParam), OLDER_MESSAGES_MAX_LIMIT)
+      : OLDER_MESSAGES_DEFAULT_LIMIT;
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id },
+    select: { id: true, archivedAt: true },
+  });
+
+  if (!conversation || conversation.archivedAt) {
+    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
+  const rows = await prisma.message.findMany({
+    where: { conversationId: id },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: limit + 1,
+  });
+
+  const hasMore = rows.length > limit;
+  const page = (hasMore ? rows.slice(0, limit) : rows).reverse();
+
+  return NextResponse.json({ messages: page, hasMore });
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await requireSession();
   if ("error" in authResult) {

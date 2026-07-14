@@ -3,6 +3,16 @@
 import { useCallback, useEffect, useRef, useState, startTransition } from "react";
 import { getConversationDetailRevision } from "@/lib/conversation-revision";
 
+type ConversationMessage = {
+  id: string;
+  body: string;
+  direction: "inbound" | "outbound";
+  status: string;
+  createdAt: string;
+  authorPhone?: string | null;
+  isSystemNote?: boolean;
+};
+
 export type ConversationDetail = {
   id: string;
   type: "direct" | "group";
@@ -29,15 +39,8 @@ export type ConversationDetail = {
       consentStatus: string;
     };
   }>;
-  messages: Array<{
-    id: string;
-    body: string;
-    direction: "inbound" | "outbound";
-    status: string;
-    createdAt: string;
-    authorPhone?: string | null;
-    isSystemNote?: boolean;
-  }>;
+  messages: ConversationMessage[];
+  hasMoreMessages?: boolean;
   notes: Array<{
     id: string;
     body: string;
@@ -63,6 +66,25 @@ type CacheEntry = {
 };
 
 const DETAIL_STALE_MS = 30_000;
+const MESSAGE_PAGE_SIZE = 50;
+
+// Union two message lists by id (later argument wins on conflicts, so fresh
+// status updates overwrite stale copies) and return them oldest-first.
+export function mergeMessages(
+  base: ConversationMessage[],
+  incoming: ConversationMessage[],
+): ConversationMessage[] {
+  const byId = new Map<string, ConversationMessage>();
+  for (const message of base) {
+    byId.set(message.id, message);
+  }
+  for (const message of incoming) {
+    byId.set(message.id, message);
+  }
+  return Array.from(byId.values()).sort(
+    (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+}
 
 export function useConversationDetail(initialConversationId?: string) {
   const [conversationId, setConversationIdState] = useState<string | null>(
@@ -71,6 +93,7 @@ export function useConversationDetail(initialConversationId?: string) {
   const [activeConversation, setActiveConversationState] = useState<ConversationDetail | null>(
     null,
   );
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
   const cacheRef = useRef(new Map<string, CacheEntry>());
   const selectedIdRef = useRef<string | null>(conversationId);
@@ -80,7 +103,7 @@ export function useConversationDetail(initialConversationId?: string) {
   const isLoadingDetail =
     conversationId !== null && activeConversation?.id !== conversationId;
 
-  const writeCache = useCallback((conversation: ConversationDetail) => {
+  const cacheConversation = useCallback((conversation: ConversationDetail) => {
     cacheRef.current.set(conversation.id, {
       conversation,
       fetchedAt: Date.now(),
@@ -88,30 +111,50 @@ export function useConversationDetail(initialConversationId?: string) {
     });
   }, []);
 
-  const applyConversationIfChanged = useCallback(
-    (conversation: ConversationDetail, options?: { urgent?: boolean }) => {
-      const revision = getConversationDetailRevision(conversation);
-      writeCache(conversation);
+  // Merge a freshly fetched page into whatever we already have so that loading a
+  // recent page (on poll) never drops older messages the user paged in, and
+  // "load earlier" availability is preserved.
+  const ingestConversation = useCallback(
+    (fetched: ConversationDetail, options?: { urgent?: boolean }) => {
+      const existing = cacheRef.current.get(fetched.id)?.conversation;
+      const merged: ConversationDetail = existing
+        ? {
+            ...fetched,
+            messages: mergeMessages(existing.messages, fetched.messages),
+            hasMoreMessages: existing.hasMoreMessages,
+          }
+        : fetched;
 
-      const update = () => {
+      const revision = getConversationDetailRevision(merged);
+      cacheRef.current.set(fetched.id, {
+        conversation: merged,
+        fetchedAt: Date.now(),
+        revision,
+      });
+
+      if (selectedIdRef.current !== fetched.id) {
+        return;
+      }
+
+      const apply = () => {
         setActiveConversationState((current) => {
           if (
-            current?.id === conversation.id &&
+            current?.id === merged.id &&
             getConversationDetailRevision(current) === revision
           ) {
             return current;
           }
-          return conversation;
+          return merged;
         });
       };
 
       if (options?.urgent) {
-        update();
+        apply();
       } else {
-        startTransition(update);
+        startTransition(apply);
       }
     },
-    [writeCache],
+    [],
   );
 
   const loadConversationDetail = useCallback(
@@ -127,13 +170,7 @@ export function useConversationDetail(initialConversationId?: string) {
         }
 
         const data = await response.json();
-        const conversation = data.conversation as ConversationDetail;
-
-        if (selectedIdRef.current === id) {
-          applyConversationIfChanged(conversation);
-        } else {
-          writeCache(conversation);
-        }
+        ingestConversation(data.conversation as ConversationDetail);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -141,7 +178,7 @@ export function useConversationDetail(initialConversationId?: string) {
         throw error;
       }
     },
-    [applyConversationIfChanged, writeCache],
+    [ingestConversation],
   );
 
   const prefetchConversationDetail = useCallback(
@@ -162,19 +199,61 @@ export function useConversationDetail(initialConversationId?: string) {
             return;
           }
           const data = await response.json();
-          const conversation = data.conversation as ConversationDetail;
-          writeCache(conversation);
-
-          if (selectedIdRef.current === id) {
-            applyConversationIfChanged(conversation);
-          }
+          ingestConversation(data.conversation as ConversationDetail);
         })
         .finally(() => {
           prefetchingRef.current.delete(id);
         });
     },
-    [applyConversationIfChanged, writeCache],
+    [ingestConversation],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    const id = selectedIdRef.current;
+    if (!id) {
+      return;
+    }
+
+    const current = cacheRef.current.get(id)?.conversation;
+    if (!current || !current.hasMoreMessages || current.messages.length === 0) {
+      return;
+    }
+
+    const cursor = current.messages[0].id;
+    setIsLoadingOlder(true);
+    try {
+      const response = await fetch(
+        `/api/conversations/${id}/messages?cursor=${cursor}&limit=${MESSAGE_PAGE_SIZE}`,
+      );
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      const older = data.messages as ConversationMessage[];
+      const hasMore = Boolean(data.hasMore);
+
+      const entry = cacheRef.current.get(id);
+      if (entry) {
+        const updated: ConversationDetail = {
+          ...entry.conversation,
+          messages: mergeMessages(older, entry.conversation.messages),
+          hasMoreMessages: hasMore,
+        };
+        cacheRef.current.set(id, {
+          conversation: updated,
+          fetchedAt: entry.fetchedAt,
+          revision: getConversationDetailRevision(updated),
+        });
+
+        if (selectedIdRef.current === id) {
+          setActiveConversationState(updated);
+        }
+      }
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }, []);
 
   const selectConversation = useCallback((id: string) => {
     setConversationIdState(id);
@@ -190,11 +269,11 @@ export function useConversationDetail(initialConversationId?: string) {
 
   const setConversationDetail = useCallback(
     (conversation: ConversationDetail) => {
-      writeCache(conversation);
+      cacheConversation(conversation);
       setConversationIdState(conversation.id);
       setActiveConversationState(conversation);
     },
-    [writeCache],
+    [cacheConversation],
   );
 
   const updateActiveConversation = useCallback(
@@ -204,11 +283,11 @@ export function useConversationDetail(initialConversationId?: string) {
           return current;
         }
         const updated = updater(current);
-        writeCache(updated);
+        cacheConversation(updated);
         return updated;
       });
     },
-    [writeCache],
+    [cacheConversation],
   );
 
   const removeCachedConversation = useCallback((id: string) => {
@@ -238,7 +317,10 @@ export function useConversationDetail(initialConversationId?: string) {
     conversationId,
     activeConversation,
     isLoadingDetail,
+    isLoadingOlder,
+    hasMoreOlderMessages: activeConversation?.hasMoreMessages ?? false,
     loadConversationDetail,
+    loadOlderMessages,
     prefetchConversationDetail,
     selectConversation,
     clearConversationSelection,

@@ -82,7 +82,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     conversationId,
     activeConversation,
     isLoadingDetail,
+    isLoadingOlder,
+    hasMoreOlderMessages,
     loadConversationDetail,
+    loadOlderMessages,
     prefetchConversationDetail,
     selectConversation,
     clearConversationSelection,
@@ -475,6 +478,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                       conversationId={conversationId ?? undefined}
                       isGroup={isGroupConversation}
                       participants={activeConversation?.participants}
+                      hasMoreOlder={hasMoreOlderMessages}
+                      isLoadingOlder={isLoadingOlder}
+                      onLoadEarlier={loadOlderMessages}
                     />
                   )}
                 </div>
@@ -613,6 +619,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   conversationId={conversationId ?? undefined}
                   isGroup={isGroupConversation}
                   participants={activeConversation?.participants}
+                  hasMoreOlder={hasMoreOlderMessages}
+                  isLoadingOlder={isLoadingOlder}
+                  onLoadEarlier={loadOlderMessages}
                 />
               )}
             </div>

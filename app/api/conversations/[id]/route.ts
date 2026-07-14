@@ -6,6 +6,11 @@ import { parseConversationStatus } from "@/lib/status";
 import { getTwilioClient } from "@/lib/twilio";
 import { updateConversationSchema } from "@/lib/validators";
 
+// Only the most recent slice of a thread is returned on load; older messages
+// are fetched on demand via GET /api/conversations/[id]/messages. This keeps the
+// payload small and fast even for very long threads.
+const MESSAGE_PAGE_SIZE = 50;
+
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await requireSession();
   if ("error" in authResult) {
@@ -25,7 +30,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         select: { id: true, name: true, email: true },
       },
       messages: {
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
+        take: MESSAGE_PAGE_SIZE + 1,
       },
       notes: {
         include: {
@@ -50,7 +56,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ conversation });
+  // We over-fetch by one to detect whether older messages exist, then return the
+  // recent page in ascending (oldest-first) order for rendering.
+  const hasMoreMessages = conversation.messages.length > MESSAGE_PAGE_SIZE;
+  const recentMessages = (
+    hasMoreMessages ? conversation.messages.slice(0, MESSAGE_PAGE_SIZE) : conversation.messages
+  ).reverse();
+
+  return NextResponse.json({
+    conversation: { ...conversation, messages: recentMessages, hasMoreMessages },
+  });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

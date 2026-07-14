@@ -78,7 +78,10 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     conversationId,
     activeConversation,
     isLoadingDetail,
+    isLoadingOlder,
+    hasMoreOlderMessages,
     loadConversationDetail,
+    loadOlderMessages,
     prefetchConversationDetail,
     selectConversation,
     clearConversationSelection,
@@ -336,6 +339,9 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
                 conversationId={conversationId ?? undefined}
                 isGroup={isGroupConversation}
                 participants={activeConversation?.participants}
+                hasMoreOlder={hasMoreOlderMessages}
+                isLoadingOlder={isLoadingOlder}
+                onLoadEarlier={loadOlderMessages}
               />
             )}
           </div>
