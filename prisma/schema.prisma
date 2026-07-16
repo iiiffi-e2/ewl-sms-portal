@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime queries go through this URL (Prisma Accelerate pooled endpoint in prod).
+  url       = env("DATABASE_URL")
+  // Migrations / introspection need a direct connection (Accelerate can't run them).
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
