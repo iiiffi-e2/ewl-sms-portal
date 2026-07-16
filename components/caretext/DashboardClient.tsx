@@ -397,8 +397,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm"
-            placeholder="Search name, phone, facility, or messages"
+              className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm"
+              placeholder="Search name, phone, facility, or messages"
             />
             <button
               className="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white"

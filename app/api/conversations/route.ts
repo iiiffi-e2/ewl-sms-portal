@@ -1,4 +1,4 @@
-import { ConversationStatus, ConversationType } from "@prisma/client";
+import { ConversationStatus, ConversationType, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
@@ -67,15 +67,18 @@ export async function GET(request: Request) {
 
   let matchedMessages: { conversationId: string; body: string; createdAt: Date }[] = [];
   if (query && shouldSearchMessageBodies(query) && conversations.length > 0) {
-    matchedMessages = await prisma.message.findMany({
-      where: {
-        conversationId: { in: conversations.map((conversation) => conversation.id) },
-        body: { contains: query, mode: "insensitive" },
-      },
-      distinct: ["conversationId"],
-      orderBy: { createdAt: "desc" },
-      select: { conversationId: true, body: true, createdAt: true },
-    });
+    const ids = conversations.map((conversation) => conversation.id);
+    // Escape LIKE wildcards so a literal % or _ in the search term matches literally.
+    const likePattern = `%${query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    matchedMessages = await prisma.$queryRaw<
+      { conversationId: string; body: string; createdAt: Date }[]
+    >(Prisma.sql`
+      SELECT DISTINCT ON ("conversationId") "conversationId", "body", "createdAt"
+      FROM "Message"
+      WHERE "conversationId" IN (${Prisma.join(ids)})
+        AND "body" ILIKE ${likePattern} ESCAPE '\'
+      ORDER BY "conversationId", "createdAt" DESC
+    `);
   }
 
   const matchedByConversation = new Map(
