@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { StatusBadge } from "@/components/caretext/StatusBadge";
 import { formatRelativeTime } from "@/lib/format";
+import { buildSnippetSegments } from "@/lib/message-search";
 
 type ConversationListItemProps = {
   id: string;
@@ -17,6 +18,8 @@ type ConversationListItemProps = {
   isGroup?: boolean;
   title?: string | null;
   participantCount?: number;
+  matchedMessageBody?: string | null;
+  searchTerm?: string;
   onClick: () => void;
   onPrefetch?: () => void;
   onDelete?: () => void;
@@ -82,7 +85,21 @@ export function ConversationListItem(props: ConversationListItemProps) {
             {formatRelativeTime(props.lastMessageAt)}
           </span>
         </div>
-        <p className="truncate text-xs text-muted">{props.preview || "No messages yet."}</p>
+        {props.matchedMessageBody && props.searchTerm ? (
+          <p className="truncate text-xs text-muted">
+            {buildSnippetSegments(props.matchedMessageBody, props.searchTerm).map((segment, index) =>
+              segment.match ? (
+                <span key={index} className="font-semibold text-slate-900">
+                  {segment.text}
+                </span>
+              ) : (
+                <span key={index}>{segment.text}</span>
+              ),
+            )}
+          </p>
+        ) : (
+          <p className="truncate text-xs text-muted">{props.preview || "No messages yet."}</p>
+        )}
         <div className="flex items-center justify-between gap-2">
           {optedOut ? (
             <span className="inline-flex items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">

@@ -57,6 +57,7 @@ type ConversationListResponse = {
       direction: "inbound" | "outbound";
       createdAt: string;
     }[];
+    matchedMessage?: { body: string; createdAt: string } | null;
   }>;
 };
 
@@ -382,7 +383,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-        placeholder="Search name, phone, or facility"
+        placeholder="Search name, phone, facility, or messages"
       />
       <button
         type="button"
@@ -403,6 +404,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
           conversations={conversations}
           selectedConversationId={conversationId ?? undefined}
           isAdmin={false}
+          searchTerm={debouncedSearch}
           onSelect={handleSelectConversation}
           onPrefetch={prefetchConversationDetail}
         />

@@ -60,6 +60,7 @@ type ConversationListResponse = {
       direction: "inbound" | "outbound";
       createdAt: string;
     }[];
+    matchedMessage?: { body: string; createdAt: string } | null;
   }>;
 };
 
@@ -396,8 +397,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm"
-              placeholder="Search name, phone, or facility"
+            className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm"
+            placeholder="Search name, phone, facility, or messages"
             />
             <button
               className="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white"
@@ -419,6 +420,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
               isAdmin={isAdmin}
+              searchTerm={debouncedSearch}
               onSelect={handleSelectConversation}
               onPrefetch={prefetchConversationDetail}
               onDelete={handleDeleteConversation}
@@ -547,7 +549,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-            placeholder="Search name, phone, or facility"
+            placeholder="Search name, phone, facility, or messages"
           />
           <button
             className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
@@ -570,6 +572,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
               conversations={conversations}
               selectedConversationId={conversationId ?? undefined}
               isAdmin={isAdmin}
+              searchTerm={debouncedSearch}
               onSelect={handleSelectConversation}
               onPrefetch={prefetchConversationDetail}
               onDelete={handleDeleteConversation}

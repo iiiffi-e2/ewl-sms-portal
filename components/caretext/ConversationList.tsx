@@ -20,10 +20,12 @@ type Conversation = {
     name: string;
   } | null;
   messages: { body: string }[];
+  matchedMessage?: { body: string; createdAt: string } | null;
 };
 
 type ConversationListProps = {
   conversations: Conversation[];
+  searchTerm?: string;
   selectedConversationId?: string;
   isAdmin?: boolean;
   onSelect: (id: string) => void;
@@ -38,6 +40,7 @@ export const ConversationList = memo(function ConversationList({
   onSelect,
   onPrefetch,
   onDelete,
+  searchTerm,
 }: ConversationListProps) {
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
 
@@ -60,6 +63,8 @@ export const ConversationList = memo(function ConversationList({
             isGroup={conversation.type === "group"}
             title={conversation.title}
             participantCount={conversation.participants?.length}
+            matchedMessageBody={conversation.matchedMessage?.body ?? null}
+            searchTerm={searchTerm}
             onClick={() => onSelect(conversation.id)}
             onPrefetch={onPrefetch ? () => onPrefetch(conversation.id) : undefined}
             onDelete={
