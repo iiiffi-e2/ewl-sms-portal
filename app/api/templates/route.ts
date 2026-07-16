@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, requireSession } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
+import { cacheFor, withDbRetry } from "@/lib/db";
 import { prisma } from "@/lib/prisma";
 import { createTemplateSchema } from "@/lib/validators";
 
@@ -9,12 +11,24 @@ export async function GET() {
     return authResult.error;
   }
 
-  const templates = await prisma.template.findMany({
-    where: authResult.session.user.role === "admin" ? undefined : { active: true },
-    orderBy: [{ active: "desc" }, { updatedAt: "desc" }],
-  });
+  const isAdmin = authResult.session.user.role === "admin";
 
-  return NextResponse.json({ templates });
+  try {
+    const templates = await withDbRetry(() =>
+      prisma.template.findMany({
+        where: isAdmin ? undefined : { active: true },
+        orderBy: [{ active: "desc" }, { updatedAt: "desc" }],
+        // Templates change rarely and every tab loads them on mount, so cache the
+        // high-volume nurse read to collapse the open-30-tabs burst. Admins are
+        // the ones editing, so keep their view uncached for immediate feedback.
+        cacheStrategy: isAdmin ? undefined : cacheFor({ ttl: 60, swr: 300 }),
+      }),
+    );
+
+    return NextResponse.json({ templates });
+  } catch (error) {
+    return dbErrorResponse(error);
+  }
 }
 
 export async function POST(request: Request) {

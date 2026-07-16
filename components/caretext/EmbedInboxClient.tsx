@@ -95,7 +95,17 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     const response = await fetch(
       `/api/conversations${debouncedSearch ? `?q=${encodeURIComponent(debouncedSearch)}` : ""}`,
     );
-    const data: ConversationListResponse = await response.json();
+    // A transient server/DB error (e.g. Accelerate 503/429) must not crash the
+    // poll or clear the inbox; keep whatever we already have and try again next tick.
+    if (!response.ok) {
+      return null;
+    }
+    let data: ConversationListResponse;
+    try {
+      data = await response.json();
+    } catch {
+      return null;
+    }
     const revision = `${debouncedSearch}:${getConversationsListRevision(data.conversations)}`;
     if (revision !== conversationsRevisionRef.current) {
       conversationsRevisionRef.current = revision;
@@ -108,8 +118,15 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
 
   const loadTemplates = useCallback(async () => {
     const response = await fetch("/api/templates");
-    const data = await response.json();
-    setTemplates(data.templates);
+    if (!response.ok) {
+      return;
+    }
+    try {
+      const data = await response.json();
+      setTemplates(data.templates);
+    } catch {
+      // Ignore transient failures; templates stay as-is until the next load.
+    }
   }, []);
 
   useEffect(() => {

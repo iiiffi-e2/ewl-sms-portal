@@ -2,6 +2,8 @@ import { ConversationStatus, ConversationType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
+import { cacheFor, withDbRetry } from "@/lib/db";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 
@@ -17,51 +19,60 @@ export async function GET(request: Request) {
   const includeArchived = searchParams.get("includeArchived") === "1";
   const typeFilter = searchParams.get("type");
 
-  const conversations = await prisma.conversation.findMany({
-    where: {
-      ...(!includeArchived ? { archivedAt: null } : {}),
-      ...(contactId ? { contactId } : {}),
-      ...(typeFilter === "group"
-        ? { type: ConversationType.group }
-        : typeFilter === "direct"
-          ? { type: ConversationType.direct }
-          : {}),
-      ...(query
-        ? {
-            OR: [
-              { contact: { name: { contains: query, mode: "insensitive" } } },
-              { contact: { phone: { contains: query, mode: "insensitive" } } },
-              { contact: { facility: { contains: query, mode: "insensitive" } } },
-              { title: { contains: query, mode: "insensitive" } },
-              { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
-              { participants: { some: { contact: { phone: { contains: query } } } } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { lastMessageAt: "desc" },
-    include: {
-      contact: true,
-      participants: {
-        include: { contact: true },
-      },
-      assignedTo: {
-        select: { id: true, name: true, email: true },
-      },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        select: {
-          id: true,
-          body: true,
-          direction: true,
-          createdAt: true,
+  try {
+    const conversations = await withDbRetry(() =>
+      prisma.conversation.findMany({
+        where: {
+          ...(!includeArchived ? { archivedAt: null } : {}),
+          ...(contactId ? { contactId } : {}),
+          ...(typeFilter === "group"
+            ? { type: ConversationType.group }
+            : typeFilter === "direct"
+              ? { type: ConversationType.direct }
+              : {}),
+          ...(query
+            ? {
+                OR: [
+                  { contact: { name: { contains: query, mode: "insensitive" } } },
+                  { contact: { phone: { contains: query, mode: "insensitive" } } },
+                  { contact: { facility: { contains: query, mode: "insensitive" } } },
+                  { title: { contains: query, mode: "insensitive" } },
+                  { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
+                  { participants: { some: { contact: { phone: { contains: query } } } } },
+                ],
+              }
+            : {}),
         },
-      },
-    },
-  });
+        orderBy: { lastMessageAt: "desc" },
+        include: {
+          contact: true,
+          participants: {
+            include: { contact: true },
+          },
+          assignedTo: {
+            select: { id: true, name: true, email: true },
+          },
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            select: {
+              id: true,
+              body: true,
+              direction: true,
+              createdAt: true,
+            },
+          },
+        },
+        // Short cache keeps the inbox near-real-time (poll interval is 5s) while
+        // deduping many tabs' polls onto one origin query per window.
+        cacheStrategy: cacheFor({ ttl: 5, swr: 25 }),
+      }),
+    );
 
-  return NextResponse.json({ conversations });
+    return NextResponse.json({ conversations });
+  } catch (error) {
+    return dbErrorResponse(error);
+  }
 }
 
 export async function POST(request: Request) {
