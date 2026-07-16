@@ -62,4 +62,21 @@ describe("buildSnippetSegments", () => {
     expect(segments[0].text.endsWith("…")).toBe(true);
     expect(segments[0].text.length).toBeLessThan(body.length);
   });
+
+  it("does not truncate a non-matching body at the maxLength+1 boundary", () => {
+    // contextRadius 10 -> maxLength 20; slicing + "…" would yield 21 chars, so a
+    // 21-char body must be returned unchanged rather than swapping its last char.
+    const body = "a".repeat(21);
+    const segments = buildSnippetSegments(body, "xyz", 10);
+    expect(segments).toEqual([{ text: body, match: false }]);
+  });
+
+  it("truncates a non-matching body one char past the boundary", () => {
+    const body = "a".repeat(22);
+    const segments = buildSnippetSegments(body, "xyz", 10);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].match).toBe(false);
+    expect(segments[0].text).toBe(`${"a".repeat(20)}…`);
+    expect(segments[0].text.length).toBeLessThan(body.length);
+  });
 });

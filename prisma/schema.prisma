@@ -188,9 +188,10 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@index([status])
-  // A pg_trgm GIN index on `body` exists via raw SQL migration
-  // (20260715000000_add_message_body_trgm_index) to support fast ILIKE
-  // message-content search. It cannot be expressed in the Prisma schema DSL.
+  // pg_trgm GIN index on `body` for fast ILIKE message-content search. The
+  // gin_trgm_ops operator class comes from the pg_trgm extension, which is
+  // created in migration 20260715000000_add_message_body_trgm_index.
+  @@index([body(ops: raw("gin_trgm_ops"))], type: Gin, map: "message_body_trgm_idx")
 }
 
 model Template {

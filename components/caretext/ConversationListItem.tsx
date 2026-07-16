@@ -32,6 +32,15 @@ export function ConversationListItem(props: ConversationListItemProps) {
     ? props.title || "Group conversation"
     : props.name || props.phone;
 
+  // Only show the matched-message snippet when the current term actually matches
+  // this body. Between polls the term can change before matchedMessageBody does;
+  // without this guard we'd render a stale, un-highlighted slice of the old match.
+  const matchedSegments =
+    props.matchedMessageBody && props.searchTerm
+      ? buildSnippetSegments(props.matchedMessageBody, props.searchTerm)
+      : null;
+  const showMatchedSnippet = matchedSegments?.some((segment) => segment.match) ?? false;
+
   return (
     <div
       className={clsx(
@@ -85,9 +94,9 @@ export function ConversationListItem(props: ConversationListItemProps) {
             {formatRelativeTime(props.lastMessageAt)}
           </span>
         </div>
-        {props.matchedMessageBody && props.searchTerm ? (
+        {showMatchedSnippet && matchedSegments ? (
           <p className="truncate text-xs text-muted">
-            {buildSnippetSegments(props.matchedMessageBody, props.searchTerm).map((segment, index) =>
+            {matchedSegments.map((segment, index) =>
               segment.match ? (
                 <span key={index} className="font-semibold text-slate-900">
                   {segment.text}

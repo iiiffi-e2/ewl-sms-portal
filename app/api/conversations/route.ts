@@ -65,15 +65,17 @@ export async function GET(request: Request) {
     },
   });
 
-  let matchedMessages: { conversationId: string; body: string; createdAt: Date }[] = [];
+  let matchedMessages: { conversationId: string; body: string }[] = [];
   if (query && shouldSearchMessageBodies(query) && conversations.length > 0) {
     const ids = conversations.map((conversation) => conversation.id);
     // Escape LIKE wildcards so a literal % or _ in the search term matches literally.
     const likePattern = `%${query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    // DISTINCT ON keeps the most recent matching message per conversation
+    // (createdAt drives precedence but isn't needed in the payload).
     matchedMessages = await prisma.$queryRaw<
-      { conversationId: string; body: string; createdAt: Date }[]
+      { conversationId: string; body: string }[]
     >(Prisma.sql`
-      SELECT DISTINCT ON ("conversationId") "conversationId", "body", "createdAt"
+      SELECT DISTINCT ON ("conversationId") "conversationId", "body"
       FROM "Message"
       WHERE "conversationId" IN (${Prisma.join(ids)})
         AND "body" ILIKE ${likePattern} ESCAPE '\\'
@@ -82,10 +84,7 @@ export async function GET(request: Request) {
   }
 
   const matchedByConversation = new Map(
-    matchedMessages.map((message) => [
-      message.conversationId,
-      { body: message.body, createdAt: message.createdAt },
-    ]),
+    matchedMessages.map((message) => [message.conversationId, { body: message.body }]),
   );
 
   const conversationsWithMatches = conversations.map((conversation) => ({

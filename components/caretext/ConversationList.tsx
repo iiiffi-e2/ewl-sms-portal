@@ -20,7 +20,7 @@ type Conversation = {
     name: string;
   } | null;
   messages: { body: string }[];
-  matchedMessage?: { body: string; createdAt: string } | null;
+  matchedMessage?: { body: string } | null;
 };
 
 type ConversationListProps = {
