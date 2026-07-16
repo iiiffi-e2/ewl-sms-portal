@@ -2,6 +2,8 @@ import { ConversationStatus, ConversationType, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
+import { cacheFor, withDbRetry } from "@/lib/db";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
@@ -18,81 +20,90 @@ export async function GET(request: Request) {
   const includeArchived = searchParams.get("includeArchived") === "1";
   const typeFilter = searchParams.get("type");
 
-  const conversations = await prisma.conversation.findMany({
-    where: {
-      ...(!includeArchived ? { archivedAt: null } : {}),
-      ...(contactId ? { contactId } : {}),
-      ...(typeFilter === "group"
-        ? { type: ConversationType.group }
-        : typeFilter === "direct"
-          ? { type: ConversationType.direct }
-          : {}),
-      ...(query
-        ? {
-            OR: [
-              { contact: { name: { contains: query, mode: "insensitive" } } },
-              { contact: { phone: { contains: query, mode: "insensitive" } } },
-              { contact: { facility: { contains: query, mode: "insensitive" } } },
-              { title: { contains: query, mode: "insensitive" } },
-              { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
-              { participants: { some: { contact: { phone: { contains: query } } } } },
-              ...(shouldSearchMessageBodies(query)
-                ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
-                : []),
-            ],
-          }
-        : {}),
-    },
-    orderBy: { lastMessageAt: "desc" },
-    include: {
-      contact: true,
-      participants: {
-        include: { contact: true },
-      },
-      assignedTo: {
-        select: { id: true, name: true, email: true },
-      },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        select: {
-          id: true,
-          body: true,
-          direction: true,
-          createdAt: true,
+  try {
+    const conversations = await withDbRetry(() =>
+      prisma.conversation.findMany({
+        where: {
+          ...(!includeArchived ? { archivedAt: null } : {}),
+          ...(contactId ? { contactId } : {}),
+          ...(typeFilter === "group"
+            ? { type: ConversationType.group }
+            : typeFilter === "direct"
+              ? { type: ConversationType.direct }
+              : {}),
+          ...(query
+            ? {
+                OR: [
+                  { contact: { name: { contains: query, mode: "insensitive" } } },
+                  { contact: { phone: { contains: query, mode: "insensitive" } } },
+                  { contact: { facility: { contains: query, mode: "insensitive" } } },
+                  { title: { contains: query, mode: "insensitive" } },
+                  { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
+                  { participants: { some: { contact: { phone: { contains: query } } } } },
+                  ...(shouldSearchMessageBodies(query)
+                    ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
+                    : []),
+                ],
+              }
+            : {}),
         },
-      },
-    },
-  });
+        orderBy: { lastMessageAt: "desc" },
+        include: {
+          contact: true,
+          participants: {
+            include: { contact: true },
+          },
+          assignedTo: {
+            select: { id: true, name: true, email: true },
+          },
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            select: {
+              id: true,
+              body: true,
+              direction: true,
+              createdAt: true,
+            },
+          },
+        },
+        // Short cache keeps the inbox near-real-time (poll interval is 5s) while
+        // deduping many tabs' polls onto one origin query per window.
+        cacheStrategy: cacheFor({ ttl: 5, swr: 25 }),
+      }),
+    );
 
-  let matchedMessages: { conversationId: string; body: string }[] = [];
-  if (query && shouldSearchMessageBodies(query) && conversations.length > 0) {
-    const ids = conversations.map((conversation) => conversation.id);
-    // Escape LIKE wildcards so a literal % or _ in the search term matches literally.
-    const likePattern = `%${query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-    // DISTINCT ON keeps the most recent matching message per conversation
-    // (createdAt drives precedence but isn't needed in the payload).
-    matchedMessages = await prisma.$queryRaw<
-      { conversationId: string; body: string }[]
-    >(Prisma.sql`
-      SELECT DISTINCT ON ("conversationId") "conversationId", "body"
-      FROM "Message"
-      WHERE "conversationId" IN (${Prisma.join(ids)})
-        AND "body" ILIKE ${likePattern} ESCAPE '\\'
-      ORDER BY "conversationId", "createdAt" DESC
-    `);
+    let matchedMessages: { conversationId: string; body: string }[] = [];
+    if (query && shouldSearchMessageBodies(query) && conversations.length > 0) {
+      const ids = conversations.map((conversation) => conversation.id);
+      // Escape LIKE wildcards so a literal % or _ in the search term matches literally.
+      const likePattern = `%${query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+      // DISTINCT ON keeps the most recent matching message per conversation
+      // (createdAt drives precedence but isn't needed in the payload).
+      matchedMessages = await withDbRetry(() =>
+        prisma.$queryRaw<{ conversationId: string; body: string }[]>(Prisma.sql`
+          SELECT DISTINCT ON ("conversationId") "conversationId", "body"
+          FROM "Message"
+          WHERE "conversationId" IN (${Prisma.join(ids)})
+            AND "body" ILIKE ${likePattern} ESCAPE '\\'
+          ORDER BY "conversationId", "createdAt" DESC
+        `),
+      );
+    }
+
+    const matchedByConversation = new Map(
+      matchedMessages.map((message) => [message.conversationId, { body: message.body }]),
+    );
+
+    const conversationsWithMatches = conversations.map((conversation) => ({
+      ...conversation,
+      matchedMessage: matchedByConversation.get(conversation.id) ?? null,
+    }));
+
+    return NextResponse.json({ conversations: conversationsWithMatches });
+  } catch (error) {
+    return dbErrorResponse(error);
   }
-
-  const matchedByConversation = new Map(
-    matchedMessages.map((message) => [message.conversationId, { body: message.body }]),
-  );
-
-  const conversationsWithMatches = conversations.map((conversation) => ({
-    ...conversation,
-    matchedMessage: matchedByConversation.get(conversation.id) ?? null,
-  }));
-
-  return NextResponse.json({ conversations: conversationsWithMatches });
 }
 
 export async function POST(request: Request) {

@@ -1,6 +1,8 @@
 import { ConversationType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAdmin, requireSession } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
+import { cacheFor, withDbRetry } from "@/lib/db";
 import { prisma } from "@/lib/prisma";
 import { parseConversationStatus } from "@/lib/status";
 import { getTwilioClient } from "@/lib/twilio";
@@ -18,54 +20,64 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const conversation = await prisma.conversation.findUnique({
-    where: { id },
-    include: {
-      contact: true,
-      participants: {
-        include: { contact: true },
-        orderBy: { createdAt: "asc" },
-      },
-      assignedTo: {
-        select: { id: true, name: true, email: true },
-      },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: MESSAGE_PAGE_SIZE + 1,
-      },
-      notes: {
+
+  try {
+    const conversation = await withDbRetry(() =>
+      prisma.conversation.findUnique({
+        where: { id },
         include: {
-          user: { select: { id: true, name: true } },
+          contact: true,
+          participants: {
+            include: { contact: true },
+            orderBy: { createdAt: "asc" },
+          },
+          assignedTo: {
+            select: { id: true, name: true, email: true },
+          },
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: MESSAGE_PAGE_SIZE + 1,
+          },
+          notes: {
+            include: {
+              user: { select: { id: true, name: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+          callLogs: {
+            orderBy: { startedAt: "desc" },
+            include: {
+              initiatedBy: { select: { id: true, name: true } },
+            },
+          },
         },
-        orderBy: { createdAt: "desc" },
-      },
-      callLogs: {
-        orderBy: { startedAt: "desc" },
-        include: {
-          initiatedBy: { select: { id: true, name: true } },
-        },
-      },
-    },
-  });
+        // Very short cache to dedupe bursts when the same thread is open in many
+        // tabs; the client merges messages by id so brief staleness is harmless.
+        cacheStrategy: cacheFor({ ttl: 3, swr: 15 }),
+      }),
+    );
 
-  if (!conversation) {
-    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    if (!conversation) {
+      return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    }
+
+    if (conversation.archivedAt) {
+      return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    }
+
+    // We over-fetch by one to detect whether older messages exist, then return the
+    // recent page in ascending (oldest-first) order for rendering.
+    const hasMoreMessages = conversation.messages.length > MESSAGE_PAGE_SIZE;
+    const recentMessages = (
+      hasMoreMessages ? conversation.messages.slice(0, MESSAGE_PAGE_SIZE) : conversation.messages
+    ).reverse();
+
+    return NextResponse.json({
+      conversation: { ...conversation, messages: recentMessages, hasMoreMessages },
+    });
+  } catch (error) {
+    return dbErrorResponse(error);
   }
-
-  if (conversation.archivedAt) {
-    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
-  }
-
-  // We over-fetch by one to detect whether older messages exist, then return the
-  // recent page in ascending (oldest-first) order for rendering.
-  const hasMoreMessages = conversation.messages.length > MESSAGE_PAGE_SIZE;
-  const recentMessages = (
-    hasMoreMessages ? conversation.messages.slice(0, MESSAGE_PAGE_SIZE) : conversation.messages
-  ).reverse();
-
-  return NextResponse.json({
-    conversation: { ...conversation, messages: recentMessages, hasMoreMessages },
-  });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
