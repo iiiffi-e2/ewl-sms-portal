@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
+import { shouldSearchMessageBodies } from "@/lib/message-search";
 
 export async function GET(request: Request) {
   const authResult = await requireSession();
@@ -35,6 +36,9 @@ export async function GET(request: Request) {
               { title: { contains: query, mode: "insensitive" } },
               { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
               { participants: { some: { contact: { phone: { contains: query } } } } },
+              ...(shouldSearchMessageBodies(query)
+                ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
+                : []),
             ],
           }
         : {}),
@@ -61,7 +65,32 @@ export async function GET(request: Request) {
     },
   });
 
-  return NextResponse.json({ conversations });
+  let matchedMessages: { conversationId: string; body: string; createdAt: Date }[] = [];
+  if (query && shouldSearchMessageBodies(query) && conversations.length > 0) {
+    matchedMessages = await prisma.message.findMany({
+      where: {
+        conversationId: { in: conversations.map((conversation) => conversation.id) },
+        body: { contains: query, mode: "insensitive" },
+      },
+      distinct: ["conversationId"],
+      orderBy: { createdAt: "desc" },
+      select: { conversationId: true, body: true, createdAt: true },
+    });
+  }
+
+  const matchedByConversation = new Map(
+    matchedMessages.map((message) => [
+      message.conversationId,
+      { body: message.body, createdAt: message.createdAt },
+    ]),
+  );
+
+  const conversationsWithMatches = conversations.map((conversation) => ({
+    ...conversation,
+    matchedMessage: matchedByConversation.get(conversation.id) ?? null,
+  }));
+
+  return NextResponse.json({ conversations: conversationsWithMatches });
 }
 
 export async function POST(request: Request) {
