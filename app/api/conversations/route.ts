@@ -76,7 +76,7 @@ export async function GET(request: Request) {
       SELECT DISTINCT ON ("conversationId") "conversationId", "body", "createdAt"
       FROM "Message"
       WHERE "conversationId" IN (${Prisma.join(ids)})
-        AND "body" ILIKE ${likePattern} ESCAPE '\'
+        AND "body" ILIKE ${likePattern} ESCAPE '\\'
       ORDER BY "conversationId", "createdAt" DESC
     `);
   }
