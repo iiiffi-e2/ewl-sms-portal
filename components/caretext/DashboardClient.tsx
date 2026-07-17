@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, startTransition } fr
 import { useSession } from "next-auth/react";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
+import { ConversationStatusControls } from "@/components/caretext/ConversationStatusControls";
 import { MessageThread } from "@/components/caretext/MessageThread";
 import { ConversationComposerArea } from "@/components/caretext/ConversationComposerArea";
 import { GroupComposerArea } from "@/components/caretext/GroupComposerArea";
@@ -444,93 +445,120 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             />
           </aside>
         ) : (
-          <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
             <button
-              className="w-fit shrink-0 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
+              type="button"
+              className="w-fit shrink-0 px-0 py-1 text-sm font-medium text-indigo-700 hover:underline"
               onClick={() => {
                 clearConversationSelection();
                 setIsNewConversation(false);
                 setDraftPhone("");
               }}
             >
-              Back to conversations
+              ← Conversations
             </button>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-                <div className="shrink-0 space-y-3">
-                  <ConversationHeader
-                    conversationId={activeConversation?.id}
-                    contactName={activeConversation?.contact?.name}
-                    phone={activeConversation?.contact?.phone}
-                    facility={activeConversation?.contact?.facility}
-                    status={activeConversation?.status}
-                    isDraft={isDraftConversation}
-                    isAdmin={isAdmin}
-                    isGroup={isGroupConversation}
-                    title={activeConversation?.title}
-                    participants={activeConversation?.participants}
-                    onStatusChange={async (status) => {
-                      if (!activeConversation) return;
-                      await fetch(`/api/conversations/${activeConversation.id}`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ status }),
-                      });
-                      await loadConversationDetail(activeConversation.id);
-                      await loadConversations();
-                    }}
-                    onDeleteConversation={
-                      activeConversation
-                        ? () => handleDeleteConversation(activeConversation.id)
-                        : undefined
-                    }
-                  />
-                  <CallBar />
-                </div>
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {isLoadingDetail ? (
-                    <ConversationThreadLoading />
-                  ) : (
-                    <MessageThread
-                      messages={activeConversation?.messages ?? []}
-                      callLogs={activeConversation?.callLogs ?? []}
-                      conversationId={conversationId ?? undefined}
-                      isGroup={isGroupConversation}
-                      participants={activeConversation?.participants}
-                      hasMoreOlder={hasMoreOlderMessages}
-                      isLoadingOlder={isLoadingOlder}
-                      onLoadEarlier={loadOlderMessages}
-                    />
-                  )}
-                </div>
-                <div className="shrink-0">
-                  {activeConversation && activeConversation.type === "group" ? (
-                    <GroupComposerArea
-                      conversationId={activeConversation.id}
-                      twilioConversationSid={activeConversation.twilioConversationSid ?? null}
-                      participants={activeConversation.participants ?? []}
-                      templates={templates}
-                      onSend={(body) => handleGroupSend(activeConversation.id, body)}
-                      onRefresh={() => {
-                        void loadConversationDetail(activeConversation.id);
-                        void loadConversations();
-                      }}
-                    />
-                  ) : (
-                  <ConversationComposerArea
-                templates={templates}
-                isDraft={isDraftConversation}
-                conversationId={activeConversation?.id}
-                consentStatus={activeConversation?.contact?.consentStatus}
-                defaultPhone={defaultPhone}
-                onPhoneChange={setDraftPhone}
-                onIntroSent={handleIntroSent}
-                onSend={handleSendMessage}
-                  />
-                  )}
-                </div>
+
+            <div className="flex h-[calc(100dvh-11rem)] min-h-[22rem] shrink-0 flex-col gap-3">
+              <div className="shrink-0 space-y-3">
+                <ConversationHeader
+                  variant="slim"
+                  conversationId={activeConversation?.id}
+                  contactName={activeConversation?.contact?.name}
+                  phone={activeConversation?.contact?.phone}
+                  facility={activeConversation?.contact?.facility}
+                  status={activeConversation?.status}
+                  isDraft={isDraftConversation}
+                  isAdmin={isAdmin}
+                  isGroup={isGroupConversation}
+                  title={activeConversation?.title}
+                  participants={activeConversation?.participants}
+                  onStatusChange={async (status) => {
+                    if (!activeConversation) return;
+                    await fetch(`/api/conversations/${activeConversation.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status }),
+                    });
+                    await loadConversationDetail(activeConversation.id);
+                    await loadConversations();
+                  }}
+                  onDeleteConversation={
+                    activeConversation
+                      ? () => handleDeleteConversation(activeConversation.id)
+                      : undefined
+                  }
+                />
+                <CallBar />
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {isLoadingDetail ? (
+                  <ConversationThreadLoading />
+                ) : (
+                  <MessageThread
+                    messages={activeConversation?.messages ?? []}
+                    callLogs={activeConversation?.callLogs ?? []}
+                    conversationId={conversationId ?? undefined}
+                    isGroup={isGroupConversation}
+                    participants={activeConversation?.participants}
+                    hasMoreOlder={hasMoreOlderMessages}
+                    isLoadingOlder={isLoadingOlder}
+                    onLoadEarlier={loadOlderMessages}
+                  />
+                )}
+              </div>
+
+              <div className="shrink-0">
+                {activeConversation && activeConversation.type === "group" ? (
+                  <GroupComposerArea
+                    conversationId={activeConversation.id}
+                    twilioConversationSid={activeConversation.twilioConversationSid ?? null}
+                    participants={activeConversation.participants ?? []}
+                    templates={templates}
+                    onSend={(body) => handleGroupSend(activeConversation.id, body)}
+                    onRefresh={() => {
+                      void loadConversationDetail(activeConversation.id);
+                      void loadConversations();
+                    }}
+                  />
+                ) : (
+                  <ConversationComposerArea
+                    templates={templates}
+                    isDraft={isDraftConversation}
+                    conversationId={activeConversation?.id}
+                    consentStatus={activeConversation?.contact?.consentStatus}
+                    defaultPhone={defaultPhone}
+                    onPhoneChange={setDraftPhone}
+                    onIntroSent={handleIntroSent}
+                    onSend={handleSendMessage}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0 space-y-3 pb-2">
+              <div className="rounded-xl border border-border bg-white p-4">
+                <p className="mb-2 text-sm font-semibold">Status</p>
+                <ConversationStatusControls
+                  status={activeConversation?.status}
+                  onStatusChange={
+                    activeConversation
+                      ? async (status) => {
+                          await fetch(`/api/conversations/${activeConversation.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ status }),
+                          });
+                          await loadConversationDetail(activeConversation.id);
+                          await loadConversations();
+                        }
+                      : undefined
+                  }
+                />
+                {activeConversation?.contact?.phone ? (
+                  <p className="mt-2 text-sm text-muted">{activeConversation.contact.phone}</p>
+                ) : null}
+              </div>
               <ContactDetailsCard
                 contact={activeConversation?.contact ?? undefined}
                 isDraft={isDraftConversation}
@@ -554,7 +582,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 }}
               />
               <CallLogsPanel callLogs={activeConversation?.callLogs ?? []} />
-              </div>
             </div>
           </section>
         )}
