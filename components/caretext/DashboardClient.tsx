@@ -538,7 +538,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
             <div className="shrink-0 space-y-3 pb-2">
               <div className="rounded-xl border border-border bg-white p-4">
-                <p className="mb-2 text-sm font-semibold">Status</p>
+                {activeConversation?.status ? (
+                  <p className="mb-2 text-sm font-semibold">Status</p>
+                ) : null}
                 <ConversationStatusControls
                   status={activeConversation?.status}
                   onStatusChange={
