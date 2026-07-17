@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { StatusBadge } from "@/components/caretext/StatusBadge";
+import { ConversationStatusControls } from "@/components/caretext/ConversationStatusControls";
 import { DeleteConversationModal } from "@/components/caretext/DeleteConversationModal";
 import { GroupParticipantsPanel } from "@/components/caretext/GroupParticipantsPanel";
 import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
@@ -27,9 +27,8 @@ type ConversationHeaderProps = {
   isGroup?: boolean;
   title?: string | null;
   participants?: GroupParticipant[];
+  variant?: "full" | "slim";
 };
-
-const statuses = ["new", "sms_sent", "awaiting_reply", "replied", "escalated", "closed"];
 
 export function ConversationHeader({
   conversationId,
@@ -44,14 +43,18 @@ export function ConversationHeader({
   isGroup,
   title,
   participants,
+  variant = "full",
 }: ConversationHeaderProps) {
-  const [isSaving, setIsSaving] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const isStartingCall = callPhase === "connecting";
 
   const deleteLabel = isGroup ? title || "this group" : contactName || phone || "";
+  const callButtonClassName =
+    variant === "slim"
+      ? "ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
+      : "ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0";
 
   if (!phone && !isGroup) {
     return (
@@ -68,7 +71,9 @@ export function ConversationHeader({
 
   return (
     <>
-      <div className="relative rounded-xl border border-border bg-white p-4">
+      <div
+        className={`relative rounded-xl border border-border bg-white ${variant === "slim" ? "p-3" : "p-4"}`}
+      >
         {isAdmin && conversationId && onDeleteConversation ? (
           <div className="absolute right-3 top-3">
             <button
@@ -108,40 +113,25 @@ export function ConversationHeader({
             ) : (
               <>
                 <p className="text-lg font-semibold">{contactName || phone}</p>
-                <p className="text-sm text-muted">{phone}</p>
-                {facility ? <p className="text-sm text-muted">Facility: {facility}</p> : null}
+                {variant === "full" ? <p className="text-sm text-muted">{phone}</p> : null}
+                {facility ? (
+                  <p className="text-sm text-muted">
+                    {variant === "full" ? `Facility: ${facility}` : facility}
+                  </p>
+                ) : null}
               </>
             )}
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
-            {status ? <StatusBadge status={status} /> : null}
-            {status && onStatusChange ? (
-              <select
-                defaultValue={status}
-                disabled={isSaving}
-                className="rounded-lg border border-border px-2 py-1 text-xs"
-                onChange={async (event) => {
-                  setIsSaving(true);
-                  try {
-                    await onStatusChange(event.target.value);
-                  } finally {
-                    setIsSaving(false);
-                  }
-                }}
-              >
-                {statuses.map((statusValue) => (
-                  <option key={statusValue} value={statusValue}>
-                    {statusValue.replaceAll("_", " ")}
-                  </option>
-                ))}
-              </select>
+            {variant === "full" ? (
+              <ConversationStatusControls status={status} onStatusChange={onStatusChange} />
             ) : null}
             {isGroup ? (
               <button
                 type="button"
                 disabled
                 title="Group voice calling isn't available."
-                className="ml-auto min-w-[5.5rem] cursor-not-allowed rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white opacity-50 sm:ml-0"
+                className={`${callButtonClassName} cursor-not-allowed opacity-50`}
               >
                 Call
               </button>
@@ -149,7 +139,7 @@ export function ConversationHeader({
               <button
                 type="button"
                 disabled={!conversationId || isCallActive || isStartingCall}
-                className="ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
+                className={callButtonClassName}
                 onClick={async () => {
                   if (!conversationId || !phone) return;
                   await startCall({ conversationId, phone, contactName });
