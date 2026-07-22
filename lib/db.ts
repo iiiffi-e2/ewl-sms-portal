@@ -24,10 +24,11 @@ export function cacheFor(
   return ACCELERATE_ACTIVE ? strategy : undefined;
 }
 
-// Error codes that represent a transient, retryable failure to talk to the
-// database (or the Accelerate proxy in front of it) rather than a real problem
-// with the query itself. See https://www.prisma.io/docs/orm/reference/error-reference
-const RETRYABLE_PRISMA_CODES = new Set<string>([
+// Error codes that represent a transient infrastructure blip (unreachable DB,
+// pool timeout, Accelerate 429/503) as opposed to a deterministic error in the
+// query itself. These are surfaced to callers as a 503 + Retry-After.
+// See https://www.prisma.io/docs/orm/reference/error-reference
+const TRANSIENT_PRISMA_CODES = new Set<string>([
   "P1001", // Can't reach database server
   "P1002", // Database server reached but timed out
   "P1008", // Operations timed out
@@ -37,10 +38,29 @@ const RETRYABLE_PRISMA_CODES = new Set<string>([
   "P6008", // Accelerate: connection / engine start error
 ]);
 
+// The subset of transient codes that are safe to retry *in-process*. We
+// deliberately EXCLUDE the resource-exhaustion codes:
+//   - P2024 (pool timeout): the connection pool is already full, so retrying
+//     just stacks another waiter onto a saturated pool (each waiting the full
+//     ~10s pool_timeout) and prevents it from ever draining — a retry storm.
+//   - P6004 (query timeout): the query already ran past Accelerate's duration
+//     limit; re-running the same slow query wastes another connection slot.
+// For these we fail fast → 503 + Retry-After, and let the client's next poll
+// try again once the pool has recovered. Only genuine connectivity blips
+// (server unreachable / connection dropped) are retried, since those fail fast
+// and a fresh attempt is likely to land on a healthy connection.
+const RETRYABLE_PRISMA_CODES = new Set<string>([
+  "P1001", // Can't reach database server
+  "P1002", // Database server reached but timed out
+  "P1008", // Operations timed out
+  "P1017", // Server has closed the connection
+  "P6008", // Accelerate: connection / engine start error
+]);
+
 /**
  * Whether an error thrown by Prisma Client is a transient infrastructure blip
- * (unreachable DB, pool timeout, Accelerate 429/503) that is safe to retry,
- * as opposed to a deterministic error that would fail again on retry.
+ * (unreachable DB, pool timeout, Accelerate 429/503) that should be reported to
+ * the caller as retryable (503), as opposed to a deterministic error (500).
  */
 export function isTransientDbError(error: unknown): boolean {
   if (error instanceof Prisma.PrismaClientInitializationError) {
@@ -48,7 +68,7 @@ export function isTransientDbError(error: unknown): boolean {
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return RETRYABLE_PRISMA_CODES.has(error.code);
+    return TRANSIENT_PRISMA_CODES.has(error.code);
   }
 
   // Accelerate rate limiting (429) and service degradation (503) surface as
@@ -68,8 +88,43 @@ export function isTransientDbError(error: unknown): boolean {
 }
 
 /**
+ * Whether a transient error is safe to retry *in-process*. This is a strict
+ * subset of {@link isTransientDbError}: it excludes resource-exhaustion codes
+ * (pool timeout P2024, query timeout P6004) because retrying those amplifies
+ * the very saturation that caused them. See RETRYABLE_PRISMA_CODES above.
+ */
+export function isRetryableDbError(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return true;
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return RETRYABLE_PRISMA_CODES.has(error.code);
+  }
+
+  // Accelerate rate limiting (429) and service degradation (503) surface as
+  // "unknown request" errors; a backoff retry is the appropriate response.
+  if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("429") ||
+      message.includes("too many requests") ||
+      message.includes("503") ||
+      message.includes("service unavailable") ||
+      message.includes("connection")
+    );
+  }
+
+  return false;
+}
+
+/**
  * Run an idempotent database read, retrying transient failures with exponential
  * backoff + jitter. Only use this for reads: retrying writes risks duplicates.
+ *
+ * Pool/query timeouts (P2024/P6004) are intentionally NOT retried here — they
+ * signal the pool is already exhausted, so we fail fast and let the caller
+ * return 503 + Retry-After instead of stacking more load onto a full pool.
  */
 export async function withDbRetry<T>(
   fn: () => Promise<T>,
@@ -81,7 +136,7 @@ export async function withDbRetry<T>(
     try {
       return await fn();
     } catch (error) {
-      if (attempt >= retries || !isTransientDbError(error)) {
+      if (attempt >= retries || !isRetryableDbError(error)) {
         throw error;
       }
 

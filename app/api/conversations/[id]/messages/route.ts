@@ -2,6 +2,8 @@ import { ConversationStatus, ConversationType, MessageDirection, MessageStatus }
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
+import { cacheFor, withDbRetry } from "@/lib/db";
 import { isGroupReadyForMessages } from "@/lib/group-conversations";
 import { getTwilioClient, getTwilioGroupProjectedAddress } from "@/lib/twilio";
 import { sendGroupMessageSchema } from "@/lib/validators";
@@ -26,26 +28,40 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       ? Math.min(Math.trunc(limitParam), OLDER_MESSAGES_MAX_LIMIT)
       : OLDER_MESSAGES_DEFAULT_LIMIT;
 
-  const conversation = await prisma.conversation.findUnique({
-    where: { id },
-    select: { id: true, archivedAt: true },
-  });
+  try {
+    const conversation = await withDbRetry(() =>
+      prisma.conversation.findUnique({
+        where: { id },
+        select: { id: true, archivedAt: true },
+        cacheStrategy: cacheFor({ ttl: 10, swr: 30 }),
+      }),
+    );
 
-  if (!conversation || conversation.archivedAt) {
-    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    if (!conversation || conversation.archivedAt) {
+      return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    }
+
+    const rows = await withDbRetry(() =>
+      prisma.message.findMany({
+        where: { conversationId: id },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: limit + 1,
+        // Older messages are historical and effectively immutable, so each
+        // cursor page is highly cacheable. This collapses "load earlier"
+        // bursts (and re-scrolls across tabs) onto one origin query, keeping
+        // the tiny connection pool free for live reads.
+        cacheStrategy: cacheFor({ ttl: 30, swr: 300 }),
+      }),
+    );
+
+    const hasMore = rows.length > limit;
+    const page = (hasMore ? rows.slice(0, limit) : rows).reverse();
+
+    return NextResponse.json({ messages: page, hasMore });
+  } catch (error) {
+    return dbErrorResponse(error);
   }
-
-  const rows = await prisma.message.findMany({
-    where: { conversationId: id },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    take: limit + 1,
-  });
-
-  const hasMore = rows.length > limit;
-  const page = (hasMore ? rows.slice(0, limit) : rows).reverse();
-
-  return NextResponse.json({ messages: page, hasMore });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
