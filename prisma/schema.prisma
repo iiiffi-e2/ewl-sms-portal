@@ -101,21 +101,21 @@ model User {
 }
 
 model Contact {
-  id                    String         @id @default(uuid())
-  name                  String?
-  phone                 String         @unique
-  facility              String?
-  address               String?
-  notes                 String?
-  emergencyContactName  String?
-  emergencyContactPhone String?
-  consentStatus         ConsentStatus  @default(none)
-  consentUpdatedAt      DateTime?
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-  conversations         Conversation[]
+  id                       String                    @id @default(uuid())
+  name                     String?
+  phone                    String                    @unique
+  facility                 String?
+  address                  String?
+  notes                    String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  consentStatus            ConsentStatus             @default(none)
+  consentUpdatedAt         DateTime?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  conversations            Conversation[]
   conversationParticipants ConversationParticipant[]
-  consentEvents         ConsentEvent[]
+  consentEvents            ConsentEvent[]
 
   @@index([name])
   @@index([phone])
@@ -123,29 +123,37 @@ model Contact {
 }
 
 model Conversation {
-  id                      String             @id @default(uuid())
-  type                    ConversationType   @default(direct)
-  contactId               String?
-  title                   String?
-  twilioConversationSid   String?            @unique
-  twilioProjectedAddress  String?
-  status                  ConversationStatus @default(new)
-  assignedToId            String?
-  archivedAt              DateTime?
-  lastMessageAt           DateTime           @default(now())
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
-  contact                 Contact?           @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  assignedTo              User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  messages                Message[]
-  callLogs                CallLog[]
-  notes                   InternalNote[]
-  participants            ConversationParticipant[]
+  id                     String                    @id @default(uuid())
+  type                   ConversationType          @default(direct)
+  contactId              String?
+  title                  String?
+  twilioConversationSid  String?                   @unique
+  twilioProjectedAddress String?
+  status                 ConversationStatus        @default(new)
+  assignedToId           String?
+  archivedAt             DateTime?
+  lastMessageAt          DateTime                  @default(now())
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  contact                Contact?                  @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  assignedTo             User?                     @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages               Message[]
+  callLogs               CallLog[]
+  notes                  InternalNote[]
+  participants           ConversationParticipant[]
 
   @@index([contactId])
   @@index([assignedToId])
   @@index([archivedAt])
   @@index([lastMessageAt])
+  // Composite index for the inbox list query
+  // (WHERE archivedAt IS NULL ORDER BY lastMessageAt DESC). Without it, Postgres
+  // walks the single-column lastMessageAt index and skips over every archived
+  // row to find the newest non-archived ones — a scan that grows unbounded as
+  // more conversations are archived, eventually pushing the query past the
+  // Accelerate query-duration limit. This lets it seek straight to the active
+  // rows in lastMessageAt order.
+  @@index([archivedAt, lastMessageAt])
   @@index([status])
   @@index([type])
 }
@@ -168,23 +176,23 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String           @id @default(uuid())
-  conversationId String
-  userId         String?
-  body           String
-  direction      MessageDirection
-  status         MessageStatus
-  twilioSid      String?          @unique
-  errorMessage   String?
-  isConsentIntro Boolean          @default(false)
-  authorPhone            String?
-  twilioConversationSid  String?
-  isSystemNote           Boolean          @default(false)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
-  consentEvents  ConsentEvent[]
+  id                    String           @id @default(uuid())
+  conversationId        String
+  userId                String?
+  body                  String
+  direction             MessageDirection
+  status                MessageStatus
+  twilioSid             String?          @unique
+  errorMessage          String?
+  isConsentIntro        Boolean          @default(false)
+  authorPhone           String?
+  twilioConversationSid String?
+  isSystemNote          Boolean          @default(false)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  conversation          Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                  User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  consentEvents         ConsentEvent[]
 
   @@index([conversationId, createdAt])
   @@index([status])
