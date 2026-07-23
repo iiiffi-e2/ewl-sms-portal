@@ -367,22 +367,93 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       phone: string;
       conversationId?: string;
     }) => {
-      const response = await fetch("/api/messages/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          body,
-          phone: targetConversationId ? defaultPhone : phone,
-          conversationId: targetConversationId,
-        }),
-      });
+      // Optimistically render the outbound message immediately so it appears in
+      // the thread the instant Send is pressed, rather than waiting on the POST
+      // (which blocks on the Twilio API call) plus the follow-up refetches.
+      const optimisticId =
+        targetConversationId && activeConversation?.id === targetConversationId
+          ? `optimistic-${crypto.randomUUID()}`
+          : null;
+
+      const removeOptimistic = () => {
+        if (!optimisticId || !targetConversationId) return;
+        updateActiveConversation((current) =>
+          current.id === targetConversationId
+            ? {
+                ...current,
+                messages: current.messages.filter((message) => message.id !== optimisticId),
+              }
+            : current,
+        );
+      };
+
+      if (optimisticId && targetConversationId) {
+        updateActiveConversation((current) =>
+          current.id === targetConversationId
+            ? {
+                ...current,
+                messages: [
+                  ...current.messages,
+                  {
+                    id: optimisticId,
+                    body,
+                    direction: "outbound" as const,
+                    status: "sending",
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              }
+            : current,
+        );
+      }
+
+      let response: Response;
+      try {
+        response = await fetch("/api/messages/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body,
+            phone: targetConversationId ? defaultPhone : phone,
+            conversationId: targetConversationId,
+          }),
+        });
+      } catch (error) {
+        removeOptimistic();
+        throw error instanceof Error ? error : new Error("Failed to send message.");
+      }
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error ?? "Failed to send message.");
+        removeOptimistic();
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error ?? "Failed to send message.");
       }
 
       const data = await response.json();
+
+      // Swap the temporary bubble for the persisted message so the follow-up
+      // refetch/poll dedupes by the real id instead of duplicating the bubble.
+      if (optimisticId && targetConversationId && data.message) {
+        updateActiveConversation((current) =>
+          current.id === targetConversationId
+            ? {
+                ...current,
+                messages: current.messages.map((message) =>
+                  message.id === optimisticId
+                    ? {
+                        id: data.message.id,
+                        body: data.message.body,
+                        direction: "outbound" as const,
+                        status: data.message.status,
+                        createdAt: data.message.createdAt,
+                      }
+                    : message,
+                ),
+              }
+            : current,
+        );
+      }
+
       selectConversation(data.conversationId);
       setIsNewConversation(false);
       await Promise.all([
@@ -390,7 +461,14 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         loadConversationDetail(data.conversationId),
       ]);
     },
-    [defaultPhone, loadConversations, loadConversationDetail, selectConversation],
+    [
+      activeConversation,
+      defaultPhone,
+      loadConversations,
+      loadConversationDetail,
+      selectConversation,
+      updateActiveConversation,
+    ],
   );
 
   const handleIntroSent = useCallback(async () => {
