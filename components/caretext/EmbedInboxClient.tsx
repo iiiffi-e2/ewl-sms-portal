@@ -62,6 +62,13 @@ type ConversationListResponse = {
 };
 
 const POLL_INTERVAL_MS = 5000;
+// Random extra delay added to each poll cycle so that tabs opened at the same
+// time (e.g. start of a shift) don't all poll on the same 5s boundary. Without
+// this, N tabs fire N identical /api/conversations queries in the same instant,
+// all miss a cold Accelerate cache at once, and stampede the small connection
+// pool before any one request can complete and seed the cache. Spreading polls
+// across the window lets the first request seed the cache and the rest hit it.
+const POLL_JITTER_MS = 2500;
 const SEARCH_DEBOUNCE_MS = 300;
 // Even without new messages, refresh the open thread occasionally so delivery
 // status transitions (sent -> delivered) still surface within a bounded window.
@@ -176,7 +183,22 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       }
     };
 
-    const interval = setInterval(tick, POLL_INTERVAL_MS);
+    // Self-scheduling timeout (instead of setInterval) so we can add per-cycle
+    // jitter and never overlap ticks. Each cycle waits the base interval plus a
+    // random offset, which keeps concurrent tabs desynchronized over time.
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+    const scheduleNext = () => {
+      if (cancelled) {
+        return;
+      }
+      timeoutId = setTimeout(async () => {
+        await tick();
+        scheduleNext();
+      }, POLL_INTERVAL_MS + Math.random() * POLL_JITTER_MS);
+    };
+    scheduleNext();
+
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         void tick();
@@ -185,7 +207,8 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      clearInterval(interval);
+      cancelled = true;
+      clearTimeout(timeoutId);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [conversationId, loadConversationDetail, loadConversations]);
