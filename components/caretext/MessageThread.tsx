@@ -84,6 +84,10 @@ export const MessageThread = memo(function MessageThread({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastAutoScrolledConversationIdRef = useRef<string | null>(null);
   const pendingScrollRestoreRef = useRef<number | null>(null);
+  const lastThreadItemIdRef = useRef<string | null>(null);
+  // Whether the user was pinned near the bottom just before the latest render,
+  // so we only auto-follow inbound messages when they weren't reading history.
+  const wasNearBottomRef = useRef(true);
 
   const displayMessages = useMemo<DisplayMessage[]>(
     () =>
@@ -173,6 +177,16 @@ export const MessageThread = memo(function MessageThread({
     }
   }, [threadItems]);
 
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+      container.scrollTop = container.scrollHeight;
+    });
+  };
+
   useEffect(() => {
     if (!conversationId || !threadItems.length) {
       return;
@@ -183,14 +197,32 @@ export const MessageThread = memo(function MessageThread({
     }
 
     lastAutoScrolledConversationIdRef.current = conversationId;
-    requestAnimationFrame(() => {
-      const container = containerRef.current;
-      if (!container) {
-        return;
-      }
-      container.scrollTop = container.scrollHeight;
-    });
+    lastThreadItemIdRef.current = threadItems.at(-1)?.id ?? null;
+    wasNearBottomRef.current = true;
+    scrollToBottom();
   }, [conversationId, threadItems.length]);
+
+  // Follow the thread when a brand-new message lands at the bottom: always for
+  // the user's own outbound sends (incl. the optimistic bubble), and for inbound
+  // only when the user was already near the bottom rather than reading history.
+  useEffect(() => {
+    const lastItem = threadItems.at(-1);
+    if (!lastItem) {
+      return;
+    }
+
+    const previousLastId = lastThreadItemIdRef.current;
+    lastThreadItemIdRef.current = lastItem.id;
+
+    if (previousLastId === null || previousLastId === lastItem.id) {
+      return;
+    }
+
+    const isOwnOutbound = lastItem.kind === "message" && lastItem.message.direction === "outbound";
+    if (isOwnOutbound || wasNearBottomRef.current) {
+      scrollToBottom();
+    }
+  }, [threadItems]);
 
   if (!threadItems.length) {
     return (
@@ -203,6 +235,11 @@ export const MessageThread = memo(function MessageThread({
   return (
     <div
       ref={containerRef}
+      onScroll={(event) => {
+        const container = event.currentTarget;
+        wasNearBottomRef.current =
+          container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+      }}
       className="flex h-full flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-slate-50 p-4"
     >
       {hasMoreOlder ? (
