@@ -8,6 +8,14 @@ import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
 
+// Hard cap on how many conversations the inbox list returns. Without this the
+// query fetched *every* non-archived conversation, each with a correlated
+// "latest messages" subquery — an unbounded, ever-growing scan that eventually
+// ran past Accelerate's 10s query limit (P6004), holding a pooled connection
+// the whole time and exhausting the tiny connection pool. The inbox only ever
+// renders a scrollable recent list, so the newest N by lastMessageAt is plenty.
+const CONVERSATION_LIST_LIMIT = 50;
+
 export async function GET(request: Request) {
   const authResult = await requireSession();
   if ("error" in authResult) {
@@ -48,6 +56,9 @@ export async function GET(request: Request) {
             : {}),
         },
         orderBy: { lastMessageAt: "desc" },
+        // Bound the result set so the query stays fast and cacheable as the
+        // conversation table grows (see CONVERSATION_LIST_LIMIT above).
+        take: CONVERSATION_LIST_LIMIT,
         include: {
           contact: true,
           participants: {
@@ -58,7 +69,10 @@ export async function GET(request: Request) {
           },
           messages: {
             orderBy: { createdAt: "desc" },
-            take: 5,
+            // The list only renders the single latest message as a preview
+            // (matched-search snippets come from the separate query below), so
+            // fetching one row per conversation avoids a 5x correlated subquery.
+            take: 1,
             select: {
               id: true,
               body: true,
