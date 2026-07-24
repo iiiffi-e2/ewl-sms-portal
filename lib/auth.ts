@@ -71,6 +71,11 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // Disabled accounts cannot sign in at all, even with valid credentials.
+        if (user.disabledAt) {
+          return null;
+        }
+
         const validPassword = await compare(credentials.password, user.passwordHash);
         if (!validPassword) {
           return null;

@@ -45,6 +45,42 @@ export const createNoteSchema = z.object({
   body: z.string().trim().min(1).max(2000),
 });
 
+const passwordField = z
+  .string()
+  .min(8, "Password must be at least 8 characters.")
+  .max(200, "Password is too long.");
+
+export const createUserSchema = z.object({
+  name: z.string().trim().min(1, "Name is required.").max(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(190),
+  password: passwordField,
+  role: z.enum(["admin", "nurse"]).default("nurse"),
+  phoneNumber: z.string().trim().max(30).optional().nullable(),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password."),
+  newPassword: passwordField,
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(190),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "Reset token is required."),
+  newPassword: passwordField,
+});
+
+export const adminResetPasswordSchema = z.object({
+  // Optional: when omitted, the API generates a random temporary password.
+  password: passwordField.optional(),
+});
+
+export const updateUserSchema = z.object({
+  disabled: z.boolean(),
+});
+
 export const initiateCallSchema = z.object({
   conversationId: z.string().uuid(),
   phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),

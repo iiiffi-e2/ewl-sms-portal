@@ -85,19 +85,35 @@ enum CallStatus {
 }
 
 model User {
-  id                    String         @id @default(uuid())
+  id                    String               @id @default(uuid())
   name                  String
-  email                 String         @unique
+  email                 String               @unique
   passwordHash          String
-  role                  UserRole       @default(nurse)
+  role                  UserRole             @default(nurse)
   phoneNumber           String?
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-  assignedConversations Conversation[] @relation("ConversationAssignee")
+  mustChangePassword    Boolean              @default(false)
+  disabledAt            DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  assignedConversations Conversation[]       @relation("ConversationAssignee")
   sentMessages          Message[]
   notes                 InternalNote[]
   callLogs              CallLog[]
   consentEvents         ConsentEvent[]
+  passwordResetTokens   PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Contact {

@@ -91,6 +91,11 @@ export function LoginForm({ callbackUrl = "/dashboard" }: LoginFormProps) {
       >
         {loading ? "Signing in..." : "Sign in"}
       </button>
+      <p className="text-center text-sm">
+        <a href="/forgot-password" className="text-indigo-600 hover:underline">
+          Forgot your password?
+        </a>
+      </p>
     </form>
   );
 }
