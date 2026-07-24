@@ -65,8 +65,8 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
           </Link>
         </>
       ) : null}
-      <Link href="/change-password" className={navLinkClass} onClick={() => setMenuOpen(false)}>
-        Change password
+      <Link href="/account" className={navLinkClass} onClick={() => setMenuOpen(false)}>
+        Account
       </Link>
     </>
   );
