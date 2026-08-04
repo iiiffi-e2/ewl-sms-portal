@@ -6,29 +6,10 @@ import {
   MessageStatus,
   Prisma,
 } from "@prisma/client";
+import { formatAlertSystemMessage, type NotifyAlertPayload } from "@/lib/notify-alert-format";
 import { prisma } from "@/lib/prisma";
 
-export type NotifyAlertPayload = {
-  version?: string;
-  vendor?: string;
-  id: string;
-  type: "Alert" | "Clear";
-  eventDateTime: string;
-  ackDateTime?: string;
-  location?: {
-    name?: string;
-    building?: string;
-  };
-  resident?: {
-    firstName?: string;
-    lastName?: string;
-  };
-  device?: {
-    name?: string;
-    type?: string;
-  };
-  near?: Array<{ name?: string }>;
-};
+export type { NotifyAlertPayload };
 
 export function parseNotifyAlertPayload(raw: unknown): NotifyAlertPayload | null {
   if (!raw || typeof raw !== "object") return null;
@@ -54,20 +35,6 @@ export async function findContactForAlert(payload: NotifyAlertPayload) {
       notifyClientId: { in: candidates },
     },
   });
-}
-
-function formatAlertSystemMessage(payload: NotifyAlertPayload, kind: "Alert" | "Clear"): string {
-  const resident = [payload.resident?.firstName, payload.resident?.lastName].filter(Boolean).join(" ");
-  const location = [payload.location?.building, payload.location?.name].filter(Boolean).join(" · ");
-  const device = [payload.device?.type, payload.device?.name].filter(Boolean).join(" · ");
-  const parts = [
-    kind === "Alert" ? "Notify alert received." : "Notify alert cleared.",
-    resident ? `Resident: ${resident}` : null,
-    location ? `Location: ${location}` : null,
-    device ? `Device: ${device}` : null,
-    `Event: ${payload.eventDateTime}`,
-  ].filter(Boolean);
-  return parts.join(" ");
 }
 
 async function ensureConversationForContact(contactId: string) {

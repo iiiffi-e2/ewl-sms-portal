@@ -4,6 +4,8 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { MessageBubble } from "@/components/caretext/MessageBubble";
 import { CallThreadBar } from "@/components/caretext/CallThreadBar";
 import { attachReactionsToMessages, type MessageReaction } from "@/lib/message-reactions";
+import { formatMessageTime } from "@/lib/format";
+import { parseNotifyAlertDisplay } from "@/lib/notify-alert-format";
 
 type Message = {
   id: string;
@@ -257,9 +259,46 @@ export const MessageThread = memo(function MessageThread({
       {threadItems.map((item) =>
         item.kind === "message" ? (
           item.message.isSystemNote ? (
-            <p key={item.id} className="px-4 py-1 text-center text-xs text-muted">
-              {item.message.body}
-            </p>
+            (() => {
+              const alertDisplay = parseNotifyAlertDisplay(item.message.body);
+              if (!alertDisplay) {
+                return (
+                  <p key={item.id} className="px-4 py-1 text-center text-xs text-muted">
+                    {item.message.body}
+                  </p>
+                );
+              }
+
+              return (
+                <div key={item.id} className="flex justify-start">
+                  <div className="max-w-[85%] pl-1 sm:max-w-[70%]">
+                    <p className="mb-1 pl-1 text-[11px] font-semibold text-slate-600">
+                      {alertDisplay.title}
+                    </p>
+                    <div
+                      className={
+                        alertDisplay.cleared
+                          ? "rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-emerald-950 shadow-sm"
+                          : "rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-950 shadow-sm"
+                      }
+                    >
+                      {alertDisplay.lines.length ? (
+                        <div className="space-y-1 text-sm leading-relaxed">
+                          {alertDisplay.lines.map((line) => (
+                            <p key={line}>{line}</p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-relaxed text-slate-600">No details provided.</p>
+                      )}
+                      <div className="mt-2 text-[11px] text-slate-500">
+                        {formatMessageTime(item.message.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
           ) : (
             <div
               key={item.id}
