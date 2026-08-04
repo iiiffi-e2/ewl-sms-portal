@@ -10,14 +10,15 @@ type GroupParticipant = {
   status: string;
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
   };
 };
 
 type ConversationHeaderProps = {
   conversationId?: string;
   contactName?: string | null;
-  phone?: string;
+  phone?: string | null;
+  notifyClientId?: string | null;
   facility?: string | null;
   status?: string;
   isDraft?: boolean;
@@ -34,6 +35,7 @@ export function ConversationHeader({
   conversationId,
   contactName,
   phone,
+  notifyClientId,
   facility,
   status,
   isDraft,
@@ -49,14 +51,16 @@ export function ConversationHeader({
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const isStartingCall = callPhase === "connecting";
+  const identityLabel = phone || (notifyClientId ? `Notify: ${notifyClientId}` : "");
+  const canCall = Boolean(phone) && !notifyClientId;
 
-  const deleteLabel = isGroup ? title || "this group" : contactName || phone || "";
+  const deleteLabel = isGroup ? title || "this group" : contactName || identityLabel || "";
   const callButtonClassName =
     variant === "slim"
       ? "ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
       : "ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0";
 
-  if (!phone && !isGroup) {
+  if (!identityLabel && !isGroup) {
     return (
       <div className="rounded-xl border border-border bg-white p-4">
         <p className="text-lg font-semibold">{isDraft ? "New Conversation" : "Conversation"}</p>
@@ -112,8 +116,8 @@ export function ConversationHeader({
               </>
             ) : (
               <>
-                <p className="text-lg font-semibold">{contactName || phone}</p>
-                {variant === "full" ? <p className="text-sm text-muted">{phone}</p> : null}
+                <p className="text-lg font-semibold">{contactName || identityLabel}</p>
+                {variant === "full" ? <p className="text-sm text-muted">{identityLabel}</p> : null}
                 {facility ? (
                   <p className="text-sm text-muted">
                     {variant === "full" ? `Facility: ${facility}` : facility}
@@ -126,11 +130,15 @@ export function ConversationHeader({
             {variant === "full" ? (
               <ConversationStatusControls status={status} onStatusChange={onStatusChange} />
             ) : null}
-            {isGroup ? (
+            {isGroup || !canCall ? (
               <button
                 type="button"
                 disabled
-                title="Group voice calling isn't available."
+                title={
+                  isGroup
+                    ? "Group voice calling isn't available."
+                    : "Voice calling isn't available for Notify contacts."
+                }
                 className={`${callButtonClassName} cursor-not-allowed opacity-50`}
               >
                 Call
@@ -148,7 +156,7 @@ export function ConversationHeader({
                 {isStartingCall ? "Calling..." : "Call"}
               </button>
             )}
-            {errorMessage && !isGroup ? (
+            {errorMessage && !isGroup && canCall ? (
               <p className="w-full text-xs text-rose-600">{errorMessage}</p>
             ) : null}
           </div>

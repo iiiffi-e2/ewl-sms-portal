@@ -1,8 +1,11 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
+import { ensureCommStackUser, isCommStackConfigured } from "@/lib/commstack";
+import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
-import { createContactSchema } from "@/lib/validators";
+import { updateContactSchema } from "@/lib/validators";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await requireSession();
@@ -11,36 +14,83 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const payload = await request.json();
-  const parsed = createContactSchema.partial().safeParse(payload);
+  const parsed = updateContactSchema.safeParse(payload);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
   const { id } = await params;
+  const existing = await prisma.contact.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Contact not found." }, { status: 404 });
+  }
+
   const hasField = <T extends object>(field: keyof T) =>
     Object.prototype.hasOwnProperty.call(payload, field as string);
-  const contact = await prisma.contact.update({
-    where: { id },
-    data: {
-      name: hasField<typeof parsed.data>("name") ? (parsed.data.name ?? null) : undefined,
-      phone: hasField<typeof parsed.data>("phone")
-        ? parsed.data.phone
-          ? normalizePhoneNumber(parsed.data.phone)
-          : undefined
-        : undefined,
-      facility: hasField<typeof parsed.data>("facility") ? (parsed.data.facility ?? null) : undefined,
-      address: hasField<typeof parsed.data>("address") ? (parsed.data.address ?? null) : undefined,
-      notes: hasField<typeof parsed.data>("notes") ? (parsed.data.notes ?? null) : undefined,
-      emergencyContactName: hasField<typeof parsed.data>("emergencyContactName")
-        ? (parsed.data.emergencyContactName ?? null)
-        : undefined,
-      emergencyContactPhone: hasField<typeof parsed.data>("emergencyContactPhone")
-        ? parsed.data.emergencyContactPhone
-          ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
-          : null
-        : undefined,
-    },
-  });
 
-  return NextResponse.json({ contact });
+  let nextPhone = existing.phone;
+  let nextNotifyClientId = existing.notifyClientId;
+
+  try {
+    if (hasField<typeof parsed.data>("phone")) {
+      nextPhone = parsed.data.phone?.trim() ? normalizePhoneNumber(parsed.data.phone) : null;
+    }
+    if (hasField<typeof parsed.data>("notifyClientId")) {
+      nextNotifyClientId = parsed.data.notifyClientId?.trim() || null;
+    }
+    assertContactIdentityXor({ phone: nextPhone, notifyClientId: nextNotifyClientId });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid contact identity." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const contact = await prisma.contact.update({
+      where: { id },
+      data: {
+        name: hasField<typeof parsed.data>("name") ? (parsed.data.name ?? null) : undefined,
+        phone: hasField<typeof parsed.data>("phone") || hasField<typeof parsed.data>("notifyClientId")
+          ? nextPhone
+          : undefined,
+        notifyClientId:
+          hasField<typeof parsed.data>("phone") || hasField<typeof parsed.data>("notifyClientId")
+            ? nextNotifyClientId
+            : undefined,
+        facility: hasField<typeof parsed.data>("facility") ? (parsed.data.facility ?? null) : undefined,
+        address: hasField<typeof parsed.data>("address") ? (parsed.data.address ?? null) : undefined,
+        notes: hasField<typeof parsed.data>("notes") ? (parsed.data.notes ?? null) : undefined,
+        emergencyContactName: hasField<typeof parsed.data>("emergencyContactName")
+          ? (parsed.data.emergencyContactName ?? null)
+          : undefined,
+        emergencyContactPhone: hasField<typeof parsed.data>("emergencyContactPhone")
+          ? parsed.data.emergencyContactPhone
+            ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
+            : null
+          : undefined,
+      },
+    });
+
+    if (contact.notifyClientId && isCommStackConfigured()) {
+      try {
+        await ensureCommStackUser({
+          userId: contact.notifyClientId,
+          name: contact.name,
+        });
+      } catch (error) {
+        console.error("Failed to provision CommStack user for contact", contact.id, error);
+      }
+    }
+
+    return NextResponse.json({ contact });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { error: "A contact with this phone number or Notify client ID already exists." },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 }

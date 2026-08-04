@@ -106,6 +106,10 @@ export async function POST(request: Request) {
   // and only reopen the gate (opted_in) once Twilio accepts it. If the send fails,
   // the contact stays opted_out so we never reopen without a disclosure going out.
   if (shouldResubscribe) {
+    if (!contact.phone) {
+      return NextResponse.json({ ok: true });
+    }
+
     const queuedMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,

@@ -45,6 +45,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     );
   }
 
+  if (!contact.phone || contact.notifyClientId) {
+    return NextResponse.json(
+      { error: "SMS opt-in is not used for Notify contacts." },
+      { status: 400 },
+    );
+  }
+
   const queuedMessage = await prisma.message.create({
     data: {
       conversationId: conversation.id,

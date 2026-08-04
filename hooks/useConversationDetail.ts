@@ -22,7 +22,8 @@ export type ConversationDetail = {
   contact: {
     id: string;
     name: string | null;
-    phone: string;
+    phone: string | null;
+    notifyClientId: string | null;
     facility: string | null;
     address: string | null;
     notes: string | null;
@@ -35,7 +36,8 @@ export type ConversationDetail = {
     contact: {
       id: string;
       name: string | null;
-      phone: string;
+      phone: string | null;
+      notifyClientId?: string | null;
       consentStatus: string;
     };
   }>;
@@ -170,7 +172,31 @@ export function useConversationDetail(initialConversationId?: string) {
         }
 
         const data = await response.json();
-        ingestConversation(data.conversation as ConversationDetail);
+        const conversation = data.conversation as ConversationDetail;
+
+        if (conversation.contact?.notifyClientId) {
+          try {
+            await fetch(`/api/conversations/${id}/commstack-sync`, {
+              method: "POST",
+              signal: controller.signal,
+            });
+            const refreshed = await fetch(`/api/conversations/${id}`, {
+              signal: controller.signal,
+            });
+            if (refreshed.ok) {
+              const refreshedData = await refreshed.json();
+              ingestConversation(refreshedData.conversation as ConversationDetail);
+              return;
+            }
+          } catch (syncError) {
+            if (syncError instanceof DOMException && syncError.name === "AbortError") {
+              return;
+            }
+            // Fall through to show the local thread if CommStack sync fails.
+          }
+        }
+
+        ingestConversation(conversation);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;

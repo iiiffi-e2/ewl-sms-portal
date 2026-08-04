@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
 import { dbErrorResponse } from "@/lib/api-errors";
 import { cacheFor, withDbRetry } from "@/lib/db";
+import { ensureCommStackUser, isCommStackConfigured } from "@/lib/commstack";
+import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
@@ -44,10 +46,12 @@ export async function GET(request: Request) {
                 OR: [
                   { contact: { name: { contains: query, mode: "insensitive" } } },
                   { contact: { phone: { contains: query, mode: "insensitive" } } },
+                  { contact: { notifyClientId: { contains: query, mode: "insensitive" } } },
                   { contact: { facility: { contains: query, mode: "insensitive" } } },
                   { title: { contains: query, mode: "insensitive" } },
                   { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
                   { participants: { some: { contact: { phone: { contains: query } } } } },
+                  { participants: { some: { contact: { notifyClientId: { contains: query } } } } },
                   ...(shouldSearchMessageBodies(query)
                     ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
                     : []),
@@ -132,31 +136,75 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const normalizedPhone = normalizePhoneNumber(parsed.data.phone);
-  const normalizedEmergencyPhone = parsed.data.emergencyContactPhone
-    ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
-    : null;
+  let phone: string | null = null;
+  let notifyClientId: string | null = null;
+  let normalizedEmergencyPhone: string | null = null;
+  try {
+    phone = parsed.data.phone?.trim() ? normalizePhoneNumber(parsed.data.phone) : null;
+    notifyClientId = parsed.data.notifyClientId?.trim() || null;
+    assertContactIdentityXor({ phone, notifyClientId });
+    normalizedEmergencyPhone = parsed.data.emergencyContactPhone
+      ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
+      : null;
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid contact identity." },
+      { status: 400 },
+    );
+  }
 
-  const contact = await prisma.contact.upsert({
-    where: { phone: normalizedPhone },
-    update: {
-      name: parsed.data.name ?? undefined,
-      facility: parsed.data.facility ?? undefined,
-      address: parsed.data.address ?? undefined,
-      notes: parsed.data.notes ?? undefined,
-      emergencyContactName: parsed.data.emergencyContactName ?? undefined,
-      emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
-    },
-    create: {
-      phone: normalizedPhone,
-      name: parsed.data.name ?? null,
-      facility: parsed.data.facility ?? null,
-      address: parsed.data.address ?? null,
-      notes: parsed.data.notes ?? null,
-      emergencyContactName: parsed.data.emergencyContactName ?? null,
-      emergencyContactPhone: normalizedEmergencyPhone,
-    },
-  });
+  const contact = phone
+    ? await prisma.contact.upsert({
+        where: { phone },
+        update: {
+          name: parsed.data.name ?? undefined,
+          facility: parsed.data.facility ?? undefined,
+          address: parsed.data.address ?? undefined,
+          notes: parsed.data.notes ?? undefined,
+          emergencyContactName: parsed.data.emergencyContactName ?? undefined,
+          emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+        },
+        create: {
+          phone,
+          name: parsed.data.name ?? null,
+          facility: parsed.data.facility ?? null,
+          address: parsed.data.address ?? null,
+          notes: parsed.data.notes ?? null,
+          emergencyContactName: parsed.data.emergencyContactName ?? null,
+          emergencyContactPhone: normalizedEmergencyPhone,
+        },
+      })
+    : await prisma.contact.upsert({
+        where: { notifyClientId: notifyClientId! },
+        update: {
+          name: parsed.data.name ?? undefined,
+          facility: parsed.data.facility ?? undefined,
+          address: parsed.data.address ?? undefined,
+          notes: parsed.data.notes ?? undefined,
+          emergencyContactName: parsed.data.emergencyContactName ?? undefined,
+          emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+        },
+        create: {
+          notifyClientId: notifyClientId!,
+          name: parsed.data.name ?? null,
+          facility: parsed.data.facility ?? null,
+          address: parsed.data.address ?? null,
+          notes: parsed.data.notes ?? null,
+          emergencyContactName: parsed.data.emergencyContactName ?? null,
+          emergencyContactPhone: normalizedEmergencyPhone,
+        },
+      });
+
+  if (contact.notifyClientId && isCommStackConfigured()) {
+    try {
+      await ensureCommStackUser({
+        userId: contact.notifyClientId,
+        name: contact.name,
+      });
+    } catch (error) {
+      console.error("Failed to provision CommStack user for conversation contact", contact.id, error);
+    }
+  }
 
   let conversation = await prisma.conversation.findFirst({
     where: {

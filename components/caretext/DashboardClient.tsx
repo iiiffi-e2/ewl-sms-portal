@@ -10,6 +10,7 @@ import { ConversationComposerArea } from "@/components/caretext/ConversationComp
 import { GroupComposerArea } from "@/components/caretext/GroupComposerArea";
 import { NewGroupConversationModal } from "@/components/caretext/NewGroupConversationModal";
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
+import { AlertsPanel } from "@/components/caretext/AlertsPanel";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
@@ -29,7 +30,8 @@ type ConversationParticipant = {
   contact: {
     id: string;
     name: string | null;
-    phone: string;
+    phone: string | null;
+    notifyClientId?: string | null;
     consentStatus: string;
   };
 };
@@ -45,7 +47,8 @@ type ConversationListResponse = {
     contact: {
       id: string;
       name: string | null;
-      phone: string;
+      phone: string | null;
+      notifyClientId: string | null;
       facility: string | null;
       address: string | null;
       notes: string | null;
@@ -241,7 +244,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         .map((message) => ({
           ...message,
           contactName: conversation.contact?.name ?? conversation.title ?? null,
-          phone: conversation.contact?.phone ?? "",
+          phone:
+            conversation.contact?.phone ?? conversation.contact?.notifyClientId ?? "",
         })),
     );
 
@@ -272,7 +276,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
     unseenInboundMessages.forEach((message) => {
       const sender = message.contactName?.trim() || message.phone;
-      const notification = new Notification(`New SMS from ${sender}`, {
+      const notification = new Notification(`New message from ${sender}`, {
         body: message.body,
         tag: `inbound-sms-${message.id}`,
       });
@@ -287,19 +291,28 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     () => activeConversation?.contact?.phone ?? draftPhone,
     [activeConversation, draftPhone],
   );
+  const contactTransport = activeConversation?.contact?.notifyClientId ? "notify" : "sms";
   const showConversationPane = isNewConversation || Boolean(conversationId);
   const isDraftConversation = isNewConversation && !activeConversation;
   const isAdmin = session?.user.role === "admin";
   const isGroupConversation = activeConversation?.type === "group";
 
   const handleCreateConversation = useCallback(
-    async (payload: { name: string; phone: string; facility: string; address: string }) => {
+    async (payload: {
+      name: string;
+      phone?: string;
+      notifyClientId?: string;
+      facility: string;
+      address: string;
+    }) => {
       const response = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: payload.name.trim() ? payload.name.trim() : null,
-          phone: payload.phone.trim(),
+          ...(payload.notifyClientId?.trim()
+            ? { notifyClientId: payload.notifyClientId.trim() }
+            : { phone: payload.phone?.trim() }),
           facility: payload.facility.trim() ? payload.facility.trim() : null,
           address: payload.address.trim() ? payload.address.trim() : null,
         }),
@@ -409,13 +422,16 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
       let response: Response;
       try {
+        const notifyClientId = activeConversation?.contact?.notifyClientId;
         response = await fetch("/api/messages/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             body,
-            phone: targetConversationId ? defaultPhone : phone,
             conversationId: targetConversationId,
+            ...(notifyClientId
+              ? { notifyClientId }
+              : { phone: targetConversationId ? defaultPhone : phone }),
           }),
         });
       } catch (error) {
@@ -566,6 +582,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   conversationId={activeConversation?.id}
                   contactName={activeConversation?.contact?.name}
                   phone={activeConversation?.contact?.phone}
+                  notifyClientId={activeConversation?.contact?.notifyClientId}
                   facility={activeConversation?.contact?.facility}
                   status={activeConversation?.status}
                   isDraft={isDraftConversation}
@@ -628,6 +645,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                     isDraft={isDraftConversation}
                     conversationId={activeConversation?.id}
                     consentStatus={activeConversation?.contact?.consentStatus}
+                    transport={contactTransport}
                     defaultPhone={defaultPhone}
                     onPhoneChange={setDraftPhone}
                     onIntroSent={handleIntroSent}
@@ -660,8 +678,13 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 />
                 {activeConversation?.contact?.phone ? (
                   <p className="mt-2 text-sm text-muted">{activeConversation.contact.phone}</p>
+                ) : activeConversation?.contact?.notifyClientId ? (
+                  <p className="mt-2 text-sm text-muted">
+                    Notify: {activeConversation.contact.notifyClientId}
+                  </p>
                 ) : null}
               </div>
+              <AlertsPanel onOpenConversation={handleSelectConversation} />
               <ContactDetailsCard
                 contact={activeConversation?.contact ?? undefined}
                 isDraft={isDraftConversation}
@@ -734,6 +757,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 conversationId={activeConversation?.id}
                 contactName={activeConversation?.contact?.name}
                 phone={activeConversation?.contact?.phone}
+                notifyClientId={activeConversation?.contact?.notifyClientId}
                 facility={activeConversation?.contact?.facility}
                 status={activeConversation?.status}
                 isDraft={isDraftConversation}
@@ -794,6 +818,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 isDraft={isDraftConversation}
                 conversationId={activeConversation?.id}
                 consentStatus={activeConversation?.contact?.consentStatus}
+                transport={contactTransport}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
                 onIntroSent={handleIntroSent}
@@ -804,6 +829,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           </div>
 
           <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
+            <AlertsPanel onOpenConversation={handleSelectConversation} />
             <ContactDetailsCard
               contact={activeConversation?.contact ?? undefined}
               isDraft={isDraftConversation}

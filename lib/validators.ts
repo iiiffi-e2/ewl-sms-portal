@@ -1,33 +1,104 @@
 import { z } from "zod";
 import { isValidPhoneNumber } from "@/lib/phone";
 
-export const sendMessageSchema = z.object({
-  conversationId: z.string().uuid().optional(),
-  phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),
-  body: z.string().trim().min(1, "Message cannot be empty.").max(1600, "Message is too long."),
-  contactName: z.string().trim().min(1).max(120).optional(),
-  facility: z.string().trim().min(1).max(120).optional(),
-});
+const optionalPhone = z
+  .string()
+  .trim()
+  .optional()
+  .nullable()
+  .refine((value) => !value || isValidPhoneNumber(value), "Invalid phone number.");
 
-export const createConversationSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional().nullable(),
-  phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),
-  facility: z.string().trim().max(120).optional().nullable(),
-  address: z.string().trim().max(240).optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
-  emergencyContactName: z.string().trim().max(120).optional().nullable(),
-  emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
-});
+const optionalNotifyClientId = z
+  .string()
+  .trim()
+  .min(1, "Notify client ID is required.")
+  .max(120)
+  .optional()
+  .nullable();
 
-export const createContactSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional().nullable(),
-  phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),
-  facility: z.string().trim().max(120).optional().nullable(),
-  address: z.string().trim().max(240).optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
-  emergencyContactName: z.string().trim().max(120).optional().nullable(),
-  emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
-});
+function refinePhoneXorNotifyClientId(
+  data: { phone?: string | null; notifyClientId?: string | null },
+  ctx: z.RefinementCtx,
+) {
+  const hasPhone = Boolean(data.phone?.trim());
+  const hasNotify = Boolean(data.notifyClientId?.trim());
+  if (hasPhone === hasNotify) {
+    ctx.addIssue({
+      code: "custom",
+      path: hasPhone ? ["notifyClientId"] : ["phone"],
+      message: "Provide either a phone number or a Notify client ID, not both.",
+    });
+  }
+}
+
+export const sendMessageSchema = z
+  .object({
+    conversationId: z.string().uuid().optional(),
+    phone: z
+      .string()
+      .min(8)
+      .refine((value) => isValidPhoneNumber(value), "Invalid phone number.")
+      .optional(),
+    notifyClientId: z.string().trim().min(1).max(120).optional(),
+    body: z.string().trim().min(1, "Message cannot be empty.").max(1600, "Message is too long."),
+    contactName: z.string().trim().min(1).max(120).optional(),
+    facility: z.string().trim().min(1).max(120).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.conversationId && !data.phone && !data.notifyClientId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["phone"],
+        message: "Provide a conversation, phone number, or Notify client ID.",
+      });
+    }
+  });
+
+export const createConversationSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional().nullable(),
+    phone: optionalPhone,
+    notifyClientId: optionalNotifyClientId,
+    facility: z.string().trim().max(120).optional().nullable(),
+    address: z.string().trim().max(240).optional().nullable(),
+    notes: z.string().trim().max(2000).optional().nullable(),
+    emergencyContactName: z.string().trim().max(120).optional().nullable(),
+    emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
+  })
+  .superRefine(refinePhoneXorNotifyClientId);
+
+export const createContactSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional().nullable(),
+    phone: optionalPhone,
+    notifyClientId: optionalNotifyClientId,
+    facility: z.string().trim().max(120).optional().nullable(),
+    address: z.string().trim().max(240).optional().nullable(),
+    notes: z.string().trim().max(2000).optional().nullable(),
+    emergencyContactName: z.string().trim().max(120).optional().nullable(),
+    emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
+  })
+  .superRefine(refinePhoneXorNotifyClientId);
+
+export const updateContactSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional().nullable(),
+    phone: optionalPhone,
+    notifyClientId: optionalNotifyClientId,
+    facility: z.string().trim().max(120).optional().nullable(),
+    address: z.string().trim().max(240).optional().nullable(),
+    notes: z.string().trim().max(2000).optional().nullable(),
+    emergencyContactName: z.string().trim().max(120).optional().nullable(),
+    emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    const phoneProvided = Object.prototype.hasOwnProperty.call(data, "phone");
+    const notifyProvided = Object.prototype.hasOwnProperty.call(data, "notifyClientId");
+    if (!phoneProvided && !notifyProvided) return;
+    if (phoneProvided && notifyProvided) {
+      refinePhoneXorNotifyClientId(data, ctx);
+    }
+  });
 
 export const updateConversationSchema = z.object({
   status: z.enum(["new", "sms_sent", "awaiting_reply", "replied", "escalated", "closed"]).optional(),

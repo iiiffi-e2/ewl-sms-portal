@@ -26,6 +26,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "One or more contacts were not found." }, { status: 400 });
   }
 
+  const notifyContacts = contacts.filter((c) => !c.phone);
+  if (notifyContacts.length > 0) {
+    return NextResponse.json(
+      {
+        error: "Notify contacts cannot be added to SMS group conversations.",
+        code: "notify_not_supported_in_groups",
+        contacts: notifyContacts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          notifyClientId: c.notifyClientId,
+        })),
+      },
+      { status: 400 },
+    );
+  }
+
   const optedOut = contacts.filter((c) => c.consentStatus === ConsentStatus.opted_out);
   if (optedOut.length > 0) {
     return NextResponse.json(

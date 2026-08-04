@@ -6,14 +6,19 @@ import { isValidPhoneNumber } from "@/lib/phone";
 type Contact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
+  notifyClientId: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
 };
 
+type Channel = "sms" | "notify";
+
 const EMPTY_FORM = {
+  channel: "sms" as Channel,
   phone: "",
+  notifyClientId: "",
   name: "",
   facility: "",
   address: "",
@@ -38,7 +43,7 @@ export function ContactsManager() {
     void loadContacts();
   }, [loadContacts]);
 
-  function updateField(field: keyof typeof EMPTY_FORM, value: string) {
+  function updateField<K extends keyof typeof EMPTY_FORM>(field: K, value: (typeof EMPTY_FORM)[K]) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -48,9 +53,14 @@ export function ContactsManager() {
   }
 
   async function handleCreate() {
-    const phone = form.phone.trim();
-    if (!isValidPhoneNumber(phone)) {
-      setError("Enter a valid phone number.");
+    if (form.channel === "sms") {
+      const phone = form.phone.trim();
+      if (!isValidPhoneNumber(phone)) {
+        setError("Enter a valid phone number.");
+        return;
+      }
+    } else if (!form.notifyClientId.trim()) {
+      setError("Enter a Notify client ID.");
       return;
     }
 
@@ -62,7 +72,9 @@ export function ContactsManager() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone,
+          ...(form.channel === "sms"
+            ? { phone: form.phone.trim() }
+            : { notifyClientId: form.notifyClientId.trim() }),
           name: form.name.trim() || undefined,
           facility: form.facility.trim() || undefined,
           address: form.address.trim() || undefined,
@@ -90,6 +102,9 @@ export function ContactsManager() {
     }
   }
 
+  const canSave =
+    form.channel === "sms" ? Boolean(form.phone.trim()) : Boolean(form.notifyClientId.trim());
+
   return (
     <section className="space-y-4">
       <div className="rounded-xl border border-border bg-white p-4">
@@ -109,13 +124,46 @@ export function ContactsManager() {
 
         {isFormOpen ? (
           <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  form.channel === "sms"
+                    ? "bg-indigo-600 text-white"
+                    : "border border-border bg-white text-slate-700"
+                }`}
+                onClick={() => updateField("channel", "sms")}
+              >
+                SMS (phone)
+              </button>
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  form.channel === "notify"
+                    ? "bg-indigo-600 text-white"
+                    : "border border-border bg-white text-slate-700"
+                }`}
+                onClick={() => updateField("channel", "notify")}
+              >
+                Notify client
+              </button>
+            </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              <input
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Phone number (required)"
-                value={form.phone}
-                onChange={(event) => updateField("phone", event.target.value)}
-              />
+              {form.channel === "sms" ? (
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Phone number (required)"
+                  value={form.phone}
+                  onChange={(event) => updateField("phone", event.target.value)}
+                />
+              ) : (
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Notify client ID (required)"
+                  value={form.notifyClientId}
+                  onChange={(event) => updateField("notifyClientId", event.target.value)}
+                />
+              )}
               <input
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                 placeholder="Name (optional)"
@@ -159,7 +207,7 @@ export function ContactsManager() {
               </button>
               <button
                 type="button"
-                disabled={isSubmitting || !form.phone.trim()}
+                disabled={isSubmitting || !canSave}
                 className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={handleCreate}
               >
@@ -171,7 +219,7 @@ export function ContactsManager() {
 
         <input
           className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm"
-          placeholder="Search name, phone, facility"
+          placeholder="Search name, phone, Notify ID, facility"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -180,7 +228,13 @@ export function ContactsManager() {
         {contacts.map((contact) => (
           <div key={contact.id} className="rounded-lg border border-border p-3">
             <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
-            <p className="text-sm text-muted">{contact.phone}</p>
+            <p className="text-sm text-muted">
+              {contact.phone
+                ? contact.phone
+                : contact.notifyClientId
+                  ? `Notify: ${contact.notifyClientId}`
+                  : "No identity"}
+            </p>
             <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
             <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
             {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}

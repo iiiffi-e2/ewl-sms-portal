@@ -5,7 +5,8 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 type Contact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
+  notifyClientId: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
@@ -15,7 +16,9 @@ type Contact = {
 
 type ContactFormState = {
   name: string;
+  channel: "sms" | "notify";
   phone: string;
+  notifyClientId: string;
   facility: string;
   address: string;
 };
@@ -25,7 +28,13 @@ type ContactDetailsCardProps = {
   isDraft?: boolean;
   draftPhone?: string;
   onDraftPhoneChange?: (phone: string) => void;
-  onCreate?: (payload: ContactFormState) => Promise<void> | void;
+  onCreate?: (payload: {
+    name: string;
+    phone?: string;
+    notifyClientId?: string;
+    facility: string;
+    address: string;
+  }) => Promise<void> | void;
   onUpdated?: () => Promise<void> | void;
 };
 
@@ -39,7 +48,9 @@ export function ContactDetailsCard({
 }: ContactDetailsCardProps) {
   const [form, setForm] = useState<ContactFormState>({
     name: "",
+    channel: "sms",
     phone: draftPhone,
+    notifyClientId: "",
     facility: "",
     address: "",
   });
@@ -54,6 +65,7 @@ export function ContactDetailsCard({
       setForm((current) => ({
         ...current,
         phone: draftPhone,
+        channel: "sms",
       }));
       setIsEditing(true);
       return;
@@ -69,7 +81,9 @@ export function ContactDetailsCard({
     if (didContactChange || !isEditing) {
       setForm({
         name: contact.name ?? "",
-        phone: contact.phone,
+        channel: contact.notifyClientId ? "notify" : "sms",
+        phone: contact.phone ?? "",
+        notifyClientId: contact.notifyClientId ?? "",
         facility: contact.facility ?? "",
         address: contact.address ?? "",
       });
@@ -97,7 +111,14 @@ export function ContactDetailsCard({
         if (!onCreate) {
           throw new Error("Unable to create conversation.");
         }
-        await onCreate(form);
+        await onCreate({
+          name: form.name,
+          facility: form.facility,
+          address: form.address,
+          ...(form.channel === "sms"
+            ? { phone: form.phone.trim() }
+            : { notifyClientId: form.notifyClientId.trim() }),
+        });
         setSuccess("Conversation saved.");
         return;
       }
@@ -111,15 +132,21 @@ export function ContactDetailsCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name.trim() ? form.name.trim() : null,
-          phone: form.phone.trim(),
           facility: form.facility.trim() ? form.facility.trim() : null,
           address: form.address.trim() ? form.address.trim() : null,
+          ...(form.channel === "sms"
+            ? { phone: form.phone.trim(), notifyClientId: null }
+            : { notifyClientId: form.notifyClientId.trim(), phone: null }),
         }),
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error?.formErrors?.[0] ?? "Failed to update contact details.");
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : (data.error?.formErrors?.[0] ?? "Failed to update contact details."),
+        );
       }
 
       setSuccess("Saved.");
@@ -145,6 +172,7 @@ export function ContactDetailsCard({
   }
 
   const isDraftMode = isDraft && !contact;
+  const identityLocked = Boolean(contact) && !isDraftMode;
 
   return (
     <div className="rounded-xl border border-border bg-white p-4 text-sm">
@@ -161,7 +189,9 @@ export function ContactDetailsCard({
               if (isEditing) {
                 setForm({
                   name: contact.name ?? "",
-                  phone: contact.phone,
+                  channel: contact.notifyClientId ? "notify" : "sms",
+                  phone: contact.phone ?? "",
+                  notifyClientId: contact.notifyClientId ?? "",
                   facility: contact.facility ?? "",
                   address: contact.address ?? "",
                 });
@@ -180,7 +210,7 @@ export function ContactDetailsCard({
       </div>
       {isDraftMode ? (
         <p className="mt-1 text-xs text-muted">
-          Enter contact details and save to create this conversation before sending an SMS.
+          Enter contact details and save to create this conversation before messaging.
         </p>
       ) : null}
       <form className="mt-3 space-y-3" onSubmit={handleSubmit}>
@@ -204,17 +234,63 @@ export function ContactDetailsCard({
             readOnly={!isEditing}
           />
         </label>
-        <label className="block">
-          <span className="text-xs font-medium text-muted">Phone number</span>
-          <input
-            className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-            value={form.phone}
-            onChange={(event) => updateForm({ phone: event.target.value })}
-            placeholder="+15551234567"
-            required
-            readOnly={!isEditing}
-          />
-        </label>
+        {isDraftMode || (isEditing && !identityLocked) ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={!isEditing}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                form.channel === "sms"
+                  ? "bg-indigo-600 text-white"
+                  : "border border-border bg-white text-slate-700"
+              }`}
+              onClick={() => updateForm({ channel: "sms" })}
+            >
+              SMS
+            </button>
+            <button
+              type="button"
+              disabled={!isEditing}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                form.channel === "notify"
+                  ? "bg-indigo-600 text-white"
+                  : "border border-border bg-white text-slate-700"
+              }`}
+              onClick={() => updateForm({ channel: "notify" })}
+            >
+              Notify
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-muted">
+            Channel: {contact?.notifyClientId ? "Notify" : "SMS"}
+          </p>
+        )}
+        {form.channel === "sms" ? (
+          <label className="block">
+            <span className="text-xs font-medium text-muted">Phone number</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+              value={form.phone}
+              onChange={(event) => updateForm({ phone: event.target.value })}
+              placeholder="+15551234567"
+              required={form.channel === "sms"}
+              readOnly={!isEditing}
+            />
+          </label>
+        ) : (
+          <label className="block">
+            <span className="text-xs font-medium text-muted">Notify client ID</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+              value={form.notifyClientId}
+              onChange={(event) => updateForm({ notifyClientId: event.target.value })}
+              placeholder="Notify client ID"
+              required={form.channel === "notify"}
+              readOnly={!isEditing}
+            />
+          </label>
+        )}
         <label className="block">
           <span className="text-xs font-medium text-muted">Address</span>
           <textarea

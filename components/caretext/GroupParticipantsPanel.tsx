@@ -4,7 +4,7 @@ type Participant = {
   status: string;
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
   };
 };
 
@@ -29,10 +29,10 @@ export function GroupParticipantsPanel({ participants }: GroupParticipantsPanelP
     <div className="flex flex-wrap gap-2">
       {participants.map((participant, index) => (
         <span
-          key={`${participant.contact.phone}-${index}`}
+          key={`${participant.contact.phone ?? "unknown"}-${index}`}
           className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-slate-900"
         >
-          {participant.contact.name ?? participant.contact.phone}
+          {participant.contact.name ?? participant.contact.phone ?? "Unknown"}
           <span
             className={clsx(
               "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",

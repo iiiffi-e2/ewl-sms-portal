@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { ensureCommStackUser, isCommStackConfigured } from "@/lib/commstack";
+import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { createContactSchema } from "@/lib/validators";
 import { requireSession } from "@/lib/api-auth";
 
@@ -13,17 +15,22 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim();
+  const smsOnly = searchParams.get("smsOnly") === "1";
 
   const contacts = await prisma.contact.findMany({
-    where: q
-      ? {
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { phone: { contains: q, mode: "insensitive" } },
-            { facility: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...(smsOnly ? { phone: { not: null } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              { notifyClientId: { contains: q, mode: "insensitive" } },
+              { facility: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -42,15 +49,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  let phone: string;
+  let phone: string | null = null;
+  let notifyClientId: string | null = null;
   let emergencyContactPhone: string | null;
   try {
-    phone = normalizePhoneNumber(parsed.data.phone);
+    phone = parsed.data.phone?.trim() ? normalizePhoneNumber(parsed.data.phone) : null;
+    notifyClientId = parsed.data.notifyClientId?.trim() || null;
+    assertContactIdentityXor({ phone, notifyClientId });
     emergencyContactPhone = parsed.data.emergencyContactPhone
       ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
       : null;
-  } catch {
-    return NextResponse.json({ error: "Invalid phone number format." }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid contact identity." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -58,6 +71,7 @@ export async function POST(request: Request) {
       data: {
         name: parsed.data.name ?? null,
         phone,
+        notifyClientId,
         facility: parsed.data.facility ?? null,
         address: parsed.data.address ?? null,
         notes: parsed.data.notes ?? null,
@@ -66,11 +80,23 @@ export async function POST(request: Request) {
       },
     });
 
+    if (notifyClientId && isCommStackConfigured()) {
+      try {
+        await ensureCommStackUser({
+          userId: notifyClientId,
+          name: contact.name,
+        });
+      } catch (error) {
+        // Contact is saved locally even if CommStack provisioning fails; send will retry.
+        console.error("Failed to provision CommStack user for contact", contact.id, error);
+      }
+    }
+
     return NextResponse.json({ contact }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
-        { error: "A contact with this phone number already exists." },
+        { error: "A contact with this phone number or Notify client ID already exists." },
         { status: 409 },
       );
     }

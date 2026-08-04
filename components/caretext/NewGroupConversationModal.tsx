@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 type Contact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
+  notifyClientId?: string | null;
   consentStatus: string;
 };
 
@@ -42,12 +43,16 @@ export function NewGroupConversationModal({
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/contacts");
+      const response = await fetch("/api/contacts?smsOnly=1");
       if (!response.ok) {
         throw new Error("Failed to load contacts.");
       }
       const data = await response.json();
-      setContacts(data.contacts ?? []);
+      setContacts(
+        (data.contacts ?? []).filter(
+          (contact: Contact) => Boolean(contact.phone) && !contact.notifyClientId,
+        ),
+      );
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load contacts.");
     } finally {
@@ -74,7 +79,8 @@ export function NewGroupConversationModal({
     }
     return contacts.filter((contact) => {
       const name = contact.name?.toLowerCase() ?? "";
-      return name.includes(query) || contact.phone.toLowerCase().includes(query);
+      const phone = contact.phone?.toLowerCase() ?? "";
+      return name.includes(query) || phone.includes(query);
     });
   }, [contacts, search]);
 
