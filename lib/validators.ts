@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCommStackUserId } from "@/lib/commstack-ids";
 import { isValidPhoneNumber } from "@/lib/phone";
 
 const optionalPhone = z
@@ -14,7 +15,11 @@ const optionalNotifyClientId = z
   .min(1, "Notify client ID is required.")
   .max(120)
   .optional()
-  .nullable();
+  .nullable()
+  .refine(
+    (value) => !value || isCommStackUserId(value),
+    "Notify client ID must be a valid UUID.",
+  );
 
 function refinePhoneXorNotifyClientId(
   data: { phone?: string | null; notifyClientId?: string | null },
@@ -39,7 +44,13 @@ export const sendMessageSchema = z
       .min(8)
       .refine((value) => isValidPhoneNumber(value), "Invalid phone number.")
       .optional(),
-    notifyClientId: z.string().trim().min(1).max(120).optional(),
+    notifyClientId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .refine((value) => isCommStackUserId(value), "Notify client ID must be a valid UUID.")
+      .optional(),
     body: z.string().trim().min(1, "Message cannot be empty.").max(1600, "Message is too long."),
     contactName: z.string().trim().min(1).max(120).optional(),
     facility: z.string().trim().min(1).max(120).optional(),

@@ -8,6 +8,7 @@ import {
   isCommStackConfigured,
   sendCommStackDirectMessage,
 } from "@/lib/commstack";
+import { startCommStackRealtime } from "@/lib/commstack-realtime";
 import { evaluateOutboundConsent } from "@/lib/consent";
 import { isNotifyContact } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
@@ -135,22 +136,27 @@ export async function POST(request: Request) {
     }
 
     try {
+      // Keep the portal realtime socket alive so replies can arrive after send.
+      void startCommStackRealtime().catch((error) => {
+        console.error("[commstack] realtime ensure-on-send failed", error);
+      });
+
       await ensureCommStackUser({
         userId: contact.notifyClientId!,
         name: contact.name,
       });
 
-      await sendCommStackDirectMessage({
+      const result = await sendCommStackDirectMessage({
         receiverUserId: contact.notifyClientId!,
         text: body,
         senderName: authResult.session.user.name ?? "CareText",
       });
 
-      // CommStack SendAck only returns ackId (not messageId). Real message ids
-      // are attached later via directHistory sync when available.
+      // Per Notify SDK 1.2, ackId is the stored message id (matches realtime message_id).
       const savedMessage = await prisma.message.update({
         where: { id: queuedMessage.id },
         data: {
+          commStackMessageId: result.messageId,
           status: MessageStatus.sent,
         },
       });

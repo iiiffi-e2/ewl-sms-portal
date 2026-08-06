@@ -285,7 +285,7 @@ export function ContactDetailsCard({
               className="mt-1 w-full rounded-lg border border-border px-3 py-2"
               value={form.notifyClientId}
               onChange={(event) => updateForm({ notifyClientId: event.target.value })}
-              placeholder="Notify client ID"
+              placeholder="Notify client UUID"
               required={form.channel === "notify"}
               readOnly={!isEditing}
             />

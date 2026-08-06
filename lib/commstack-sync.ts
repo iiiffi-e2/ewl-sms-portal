@@ -33,14 +33,40 @@ export async function syncCommStackConversation(conversationId: string): Promise
     if (existing) continue;
 
     const isOutbound = item.sender === portalUserId;
+
+    // CareText already writes portal outbound on send. Re-importing history echoes
+    // creates duplicate bubbles (especially when ackId and history messageId differ).
+    if (isOutbound) {
+      const orphan = await prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          direction: MessageDirection.outbound,
+          body: item.text,
+          commStackMessageId: null,
+          status: { in: [MessageStatus.queued, MessageStatus.sent, MessageStatus.delivered] },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      if (orphan) {
+        await prisma.message.update({
+          where: { id: orphan.id },
+          data: {
+            commStackMessageId: item.messageId,
+            status: MessageStatus.sent,
+          },
+        });
+      }
+      continue;
+    }
+
     const createdAt = item.createdAt ? new Date(item.createdAt) : new Date();
 
     await prisma.message.create({
       data: {
         conversationId: conversation.id,
         body: item.text,
-        direction: isOutbound ? MessageDirection.outbound : MessageDirection.inbound,
-        status: isOutbound ? MessageStatus.sent : MessageStatus.received,
+        direction: MessageDirection.inbound,
+        status: MessageStatus.received,
         commStackMessageId: item.messageId,
         createdAt: Number.isNaN(createdAt.getTime()) ? undefined : createdAt,
       },

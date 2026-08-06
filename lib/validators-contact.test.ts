@@ -7,15 +7,26 @@ describe("createContactSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts Notify contacts with notifyClientId only", () => {
-    const parsed = createContactSchema.safeParse({ notifyClientId: "client-1", name: "Ada" });
+  it("accepts Notify contacts with UUID notifyClientId only", () => {
+    const parsed = createContactSchema.safeParse({
+      notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Ada",
+    });
     expect(parsed.success).toBe(true);
+  });
+
+  it("rejects non-UUID notifyClientId", () => {
+    const parsed = createContactSchema.safeParse({
+      notifyClientId: "client-1",
+      name: "Ada",
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects both phone and notifyClientId", () => {
     const parsed = createContactSchema.safeParse({
       phone: "+15551234567",
-      notifyClientId: "client-1",
+      notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
     });
     expect(parsed.success).toBe(false);
   });
@@ -35,9 +46,9 @@ describe("sendMessageSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("allows notifyClientId without phone", () => {
+  it("allows UUID notifyClientId without phone", () => {
     const parsed = sendMessageSchema.safeParse({
-      notifyClientId: "client-1",
+      notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
       body: "Hello",
     });
     expect(parsed.success).toBe(true);

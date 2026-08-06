@@ -66,15 +66,18 @@ Alert webhook
   -> system Message in conversation when matched
 ```
 
-## Configuration
+## Configuration (SDK 1.2+)
 
 | Env | Purpose |
 |---|---|
-| `COMM_STACK_BASE_URL` | CommStack hostname |
-| `COMM_STACK_SDK_TOKEN` | Server SDK token |
-| `COMM_STACK_APP_ID` | Application / tenant id |
+| `COMM_STACK_BASE_URL` | Hostname only (e.g. `qsscommbe3.notifync.com`) |
+| `COMM_STACK_ENV` | `dev` or `production` |
+| `COMM_STACK_APP_ID` | Application / tenant id (preferred) |
+| `COMM_STACK_APP_NAME` | Optional: register app by name if app id unknown |
 | `COMM_STACK_PORTAL_USER_ID` | Shared portal sender UUID |
 | `NOTIFY_ALERT_WEBHOOK_SECRET` | Webhook auth (required in production) |
+
+No SDK token is required for v1.2 (token is bundled / env-selected by the SDK). Notify client IDs must be UUIDs. Inbound DMs arrive on the server realtime connection started from `instrumentation.ts`; `directHistory` remains for backfill.
 
 Webhook routes:
 
@@ -83,11 +86,10 @@ Webhook routes:
 
 ## Open items for Notify
 
-1. Exact semantics of Notify client ID vs CommStack `userId`.
-2. Inbound DM push webhook availability (replace history sync).
-3. Which alert payload field is the durable client ID (v1 uses `id`).
-4. Clear/ack callback URL if CareText must call Notify back.
-5. Confirmed production `baseUrl` / token / `appId` values (SDK package is installed).
+1. Which alert payload field is the durable client ID (v1 uses `id`).
+2. Clear/ack callback URL if CareText must call Notify back.
+3. Production host (staging is `qsscommbe3.notifync.com` + `COMM_STACK_ENV=dev`).
+4. Confirm registered CareText `COMM_STACK_APP_ID` for staging/prod.
 
 ## Future: Approach 2 — messaging provider abstraction
 
