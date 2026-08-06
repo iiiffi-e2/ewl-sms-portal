@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import {
+  getCommStackConfigDiagnostics,
   isCommStackConfigured,
   verifyCommStackAccess,
 } from "@/lib/commstack";
@@ -17,10 +18,14 @@ export async function GET() {
   }
 
   if (!isCommStackConfigured()) {
+    const diagnostics = getCommStackConfigDiagnostics();
     return NextResponse.json({
       configured: false,
       verified: false,
       realtimeConnected: false,
+      checks: diagnostics.checks,
+      missing: diagnostics.missing,
+      vercelEnv: process.env.VERCEL_ENV ?? null,
     });
   }
 

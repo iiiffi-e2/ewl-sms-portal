@@ -35,16 +35,74 @@ type CommStackMessage = {
   readAt?: string | Date | null;
 };
 
+/** Strip whitespace and surrounding quotes (common when pasting .env values into Vercel). */
+function readEnv(name: string): string | undefined {
+  const raw = process.env[name];
+  if (raw == null) return undefined;
+  const trimmed = raw.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim() || undefined;
+  }
+  return trimmed || undefined;
+}
+
+export type CommStackConfigDiagnostics = {
+  configured: boolean;
+  checks: {
+    baseUrl: boolean;
+    env: boolean;
+    envRaw: string | null;
+    portalUserId: boolean;
+    appIdOrName: boolean;
+  };
+  missing: string[];
+};
+
+export function getCommStackConfigDiagnostics(): CommStackConfigDiagnostics {
+  const baseUrl = Boolean(readEnv("COMM_STACK_BASE_URL"));
+  const envRaw = readEnv("COMM_STACK_ENV")?.toLowerCase() ?? null;
+  const envOk = envRaw === "dev" || envRaw === "production";
+  const portalUserId = Boolean(readEnv("COMM_STACK_PORTAL_USER_ID"));
+  const appIdOrName = Boolean(readEnv("COMM_STACK_APP_ID") || readEnv("COMM_STACK_APP_NAME"));
+
+  const missing: string[] = [];
+  if (!baseUrl) missing.push("COMM_STACK_BASE_URL");
+  if (!envOk) {
+    missing.push(
+      envRaw == null
+        ? "COMM_STACK_ENV"
+        : `COMM_STACK_ENV (got ${JSON.stringify(envRaw)}; need "dev" or "production")`,
+    );
+  }
+  if (!portalUserId) missing.push("COMM_STACK_PORTAL_USER_ID");
+  if (!appIdOrName) missing.push("COMM_STACK_APP_ID or COMM_STACK_APP_NAME");
+
+  return {
+    configured: baseUrl && envOk && portalUserId && appIdOrName,
+    checks: {
+      baseUrl,
+      env: envOk,
+      envRaw,
+      portalUserId,
+      appIdOrName,
+    },
+    missing,
+  };
+}
+
 function readBaseConfig(): Omit<CommStackConfig, "appId"> & { appId?: string } {
-  const baseUrl = process.env.COMM_STACK_BASE_URL?.trim()
-    .replace(/^https?:\/\//, "")
+  const baseUrl = readEnv("COMM_STACK_BASE_URL")
+    ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "")
     .split("/")[0]
     .split(":")[0];
-  const envRaw = process.env.COMM_STACK_ENV?.trim().toLowerCase();
-  const portalUserId = process.env.COMM_STACK_PORTAL_USER_ID?.trim();
-  const appId = process.env.COMM_STACK_APP_ID?.trim();
-  const appName = process.env.COMM_STACK_APP_NAME?.trim();
+  const envRaw = readEnv("COMM_STACK_ENV")?.toLowerCase();
+  const portalUserId = readEnv("COMM_STACK_PORTAL_USER_ID");
+  const appId = readEnv("COMM_STACK_APP_ID");
+  const appName = readEnv("COMM_STACK_APP_NAME");
 
   if (!baseUrl || !envRaw || !portalUserId) {
     throw new CommStackError(
@@ -80,18 +138,12 @@ function readBaseConfig(): Omit<CommStackConfig, "appId"> & { appId?: string } {
     appId,
     appName,
     portalUserId,
-    timeoutMs: Number(process.env.COMM_STACK_TIMEOUT_MS ?? 15000),
+    timeoutMs: Number(readEnv("COMM_STACK_TIMEOUT_MS") ?? 15000),
   };
 }
 
 export function isCommStackConfigured(): boolean {
-  const env = process.env.COMM_STACK_ENV?.trim().toLowerCase();
-  return Boolean(
-    process.env.COMM_STACK_BASE_URL?.trim() &&
-      (env === "dev" || env === "production") &&
-      process.env.COMM_STACK_PORTAL_USER_ID?.trim() &&
-      (process.env.COMM_STACK_APP_ID?.trim() || process.env.COMM_STACK_APP_NAME?.trim()),
-  );
+  return getCommStackConfigDiagnostics().configured;
 }
 
 let rootClient: CommStack | null = null;
