@@ -119,7 +119,8 @@ model PasswordResetToken {
 model Contact {
   id                       String                    @id @default(uuid())
   name                     String?
-  phone                    String                    @unique
+  // Optional: Notify-only contacts have no SMS number.
+  phone                    String?                   @unique
   facility                 String?
   address                  String?
   notes                    String?

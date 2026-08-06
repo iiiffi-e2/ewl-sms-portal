@@ -6,7 +6,7 @@ import { buildSnippetSegments } from "@/lib/message-search";
 type ConversationListItemProps = {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   preview: string;
   status: string;
   consentStatus?: "none" | "opted_in" | "opted_out";
@@ -30,7 +30,7 @@ export function ConversationListItem(props: ConversationListItemProps) {
   const showDelete = props.isAdmin && props.onDelete;
   const primaryLabel = props.isGroup
     ? props.title || "Group conversation"
-    : props.name || props.phone;
+    : props.name || props.phone || "Unknown contact";
 
   // Only show the matched-message snippet when the current term actually matches
   // this body. Between polls the term can change before matchedMessageBody does;

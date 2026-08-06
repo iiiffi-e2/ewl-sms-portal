@@ -17,7 +17,7 @@ import {
 } from "@/lib/twilio";
 
 type ParticipantLike = { status: "pending_intro" | "active" | "removed" };
-type ContactLike = { name: string | null; phone: string };
+type ContactLike = { name: string | null; phone: string | null };
 
 export function countActiveParticipants(participants: ParticipantLike[]): number {
   return participants.filter((p) => p.status === "active").length;
@@ -32,7 +32,7 @@ export function isGroupReadyForMessages(twilioConversationSid: string | null | u
 }
 
 export function buildDefaultGroupTitle(contacts: ContactLike[]): string {
-  const labels = contacts.map((c) => c.name?.trim() || c.phone);
+  const labels = contacts.map((c) => c.name?.trim() || c.phone || "Unknown");
   if (labels.length <= 3) {
     return labels.join(", ");
   }
@@ -90,6 +90,10 @@ export async function maybeActivateTwilioGroup(
     return { ok: true };
   }
 
+  if (active.some((p) => !p.contact.phone)) {
+    return { ok: false, error: "All active group participants need a phone number." };
+  }
+
   const projectedAddress = conversation.twilioProjectedAddress ?? getTwilioGroupProjectedAddress();
   const client = getTwilioClient();
 
@@ -132,6 +136,9 @@ export async function maybeActivateTwilioGroup(
   });
 
   for (const participant of existing) {
+    if (!participant.contact.phone) {
+      continue;
+    }
     try {
       const created = await client.conversations.v1
         .conversations(conversation.twilioConversationSid)
@@ -158,6 +165,9 @@ export async function sendGroupConsentIntro(params: {
   const contact = await prisma.contact.findUnique({ where: { id: params.contactId } });
   if (!contact) {
     return { ok: false, error: "Contact not found." };
+  }
+  if (!contact.phone) {
+    return { ok: false, error: "Contact has no phone number." };
   }
   if (contact.consentStatus === ConsentStatus.opted_out) {
     return { ok: false, error: "Contact opted out." };

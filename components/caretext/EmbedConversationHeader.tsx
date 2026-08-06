@@ -7,14 +7,14 @@ type GroupParticipant = {
   status: string;
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
   };
 };
 
 type EmbedConversationHeaderProps = {
   conversationId?: string;
   contactName?: string | null;
-  phone?: string;
+  phone?: string | null;
   isDraft?: boolean;
   isGroup?: boolean;
   title?: string | null;

@@ -12,7 +12,7 @@ type Participant = {
   status: string;
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
   };
 };
 
@@ -35,7 +35,7 @@ export function GroupComposerArea({
   if (!twilioConversationSid) {
     const pendingNames = participants
       .filter((participant) => participant.status === "pending_intro")
-      .map((participant) => participant.contact.name ?? participant.contact.phone);
+      .map((participant) => participant.contact.name ?? participant.contact.phone ?? "Unknown");
 
     return (
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">

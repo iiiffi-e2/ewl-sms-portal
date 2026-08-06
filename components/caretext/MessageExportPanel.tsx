@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 type ContactOption = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
 };
 
 type ConversationOption = {
@@ -158,7 +158,7 @@ export function MessageExportPanel() {
             <option value="">All contacts</option>
             {contactOptions.map((contact) => (
               <option key={contact.id} value={contact.id}>
-                {(contact.name ?? "Unknown") + ` (${contact.phone})`}
+                {(contact.name ?? "Unknown") + ` (${contact.phone ?? "no phone"})`}
               </option>
             ))}
           </select>

@@ -25,7 +25,7 @@ type ConversationParticipant = {
   contact: {
     id: string;
     name: string | null;
-    phone: string;
+    phone: string | null;
     consentStatus: string;
   };
 };
@@ -41,7 +41,7 @@ type ConversationListResponse = {
     contact: {
       id: string;
       name: string | null;
-      phone: string;
+      phone: string | null;
       facility: string | null;
       address: string | null;
       notes: string | null;

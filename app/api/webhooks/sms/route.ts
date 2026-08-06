@@ -120,7 +120,7 @@ export async function POST(request: Request) {
       const twilioClient = getTwilioClient();
       const result = await twilioClient.messages.create({
         from: getTwilioFromNumber(),
-        to: contact.phone,
+        to: normalizedPhone,
         body: OPT_IN_INTRO_TEXT,
         statusCallback: `${process.env.NEXTAUTH_URL}/api/webhooks/sms-status`,
       });

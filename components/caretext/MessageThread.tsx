@@ -23,7 +23,7 @@ type DisplayMessage = Message & {
 type ThreadParticipant = {
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
   };
 };
 
@@ -101,7 +101,7 @@ export const MessageThread = memo(function MessageThread({
   const participantNameByPhone = useMemo(() => {
     const map = new Map<string, string>();
     (participants ?? []).forEach((participant) => {
-      if (participant.contact.name) {
+      if (participant.contact.name && participant.contact.phone) {
         map.set(participant.contact.phone, participant.contact.name);
       }
     });
@@ -118,6 +118,9 @@ export const MessageThread = memo(function MessageThread({
   const colorIndexByPhone = useMemo(() => {
     const map = new Map<string, number>();
     (participants ?? []).forEach((participant, index) => {
+      if (!participant.contact.phone) {
+        return;
+      }
       map.set(participant.contact.phone, index % GROUP_SENDER_COLORS.length);
     });
     return map;

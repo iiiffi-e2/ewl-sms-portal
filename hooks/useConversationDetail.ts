@@ -22,7 +22,7 @@ export type ConversationDetail = {
   contact: {
     id: string;
     name: string | null;
-    phone: string;
+    phone: string | null;
     facility: string | null;
     address: string | null;
     notes: string | null;
@@ -35,7 +35,7 @@ export type ConversationDetail = {
     contact: {
       id: string;
       name: string | null;
-      phone: string;
+      phone: string | null;
       consentStatus: string;
     };
   }>;

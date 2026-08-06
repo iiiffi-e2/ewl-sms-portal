@@ -5,14 +5,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 type Contact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
   consentStatus: string;
 };
 
 type OptedOutContact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
 };
 
 type NewGroupConversationModalProps = {
@@ -68,13 +68,16 @@ export function NewGroupConversationModal({
   }, [open, loadContacts]);
 
   const filteredContacts = useMemo(() => {
+    // Group MMS requires real phone numbers; hide Notify-only contacts.
+    const smsContacts = contacts.filter((contact) => Boolean(contact.phone));
     const query = search.trim().toLowerCase();
     if (!query) {
-      return contacts;
+      return smsContacts;
     }
-    return contacts.filter((contact) => {
+    return smsContacts.filter((contact) => {
       const name = contact.name?.toLowerCase() ?? "";
-      return name.includes(query) || contact.phone.toLowerCase().includes(query);
+      const phone = contact.phone?.toLowerCase() ?? "";
+      return name.includes(query) || phone.includes(query);
     });
   }, [contacts, search]);
 

@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 type Contact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
@@ -69,7 +69,7 @@ export function ContactDetailsCard({
     if (didContactChange || !isEditing) {
       setForm({
         name: contact.name ?? "",
-        phone: contact.phone,
+        phone: contact.phone ?? "",
         facility: contact.facility ?? "",
         address: contact.address ?? "",
       });
@@ -161,7 +161,7 @@ export function ContactDetailsCard({
               if (isEditing) {
                 setForm({
                   name: contact.name ?? "",
-                  phone: contact.phone,
+                  phone: contact.phone ?? "",
                   facility: contact.facility ?? "",
                   address: contact.address ?? "",
                 });

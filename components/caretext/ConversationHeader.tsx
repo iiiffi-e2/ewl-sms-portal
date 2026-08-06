@@ -10,14 +10,14 @@ type GroupParticipant = {
   status: string;
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
   };
 };
 
 type ConversationHeaderProps = {
   conversationId?: string;
   contactName?: string | null;
-  phone?: string;
+  phone?: string | null;
   facility?: string | null;
   status?: string;
   isDraft?: boolean;
@@ -56,7 +56,7 @@ export function ConversationHeader({
       ? "ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0"
       : "ml-auto min-w-[5.5rem] rounded-lg bg-emerald-600 px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0";
 
-  if (!phone && !isGroup) {
+  if (!phone && !contactName && !isGroup) {
     return (
       <div className="rounded-xl border border-border bg-white p-4">
         <p className="text-lg font-semibold">{isDraft ? "New Conversation" : "Conversation"}</p>

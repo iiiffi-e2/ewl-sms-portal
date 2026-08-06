@@ -12,7 +12,7 @@ type Conversation = {
   lastMessageAt: string;
   contact: {
     name: string | null;
-    phone: string;
+    phone: string | null;
     consentStatus?: "none" | "opted_in" | "opted_out";
   } | null;
   participants?: { status: string }[];

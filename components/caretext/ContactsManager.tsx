@@ -6,7 +6,7 @@ import { isValidPhoneNumber } from "@/lib/phone";
 type Contact = {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
@@ -180,7 +180,7 @@ export function ContactsManager() {
         {contacts.map((contact) => (
           <div key={contact.id} className="rounded-lg border border-border p-3">
             <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
-            <p className="text-sm text-muted">{contact.phone}</p>
+            <p className="text-sm text-muted">{contact.phone ?? "No phone number"}</p>
             <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
             <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
             {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
