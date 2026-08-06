@@ -34,6 +34,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Conversation has no contact." }, { status: 400 });
   }
 
+  if (!contact.phone) {
+    return NextResponse.json(
+      { error: "This contact has no phone number for SMS.", code: "missing_phone" },
+      { status: 400 },
+    );
+  }
+
   if (contact.consentStatus === ConsentStatus.opted_in) {
     return NextResponse.json({ ok: true, alreadyOptedIn: true, conversationId: conversation.id });
   }

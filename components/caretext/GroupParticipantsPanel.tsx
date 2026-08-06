@@ -29,7 +29,7 @@ export function GroupParticipantsPanel({ participants }: GroupParticipantsPanelP
     <div className="flex flex-wrap gap-2">
       {participants.map((participant, index) => (
         <span
-          key={`${participant.contact.phone ?? "unknown"}-${index}`}
+          key={`${participant.contact.phone ?? participant.contact.name ?? "participant"}-${index}`}
           className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-slate-900"
         >
           {participant.contact.name ?? participant.contact.phone ?? "Unknown"}

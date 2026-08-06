@@ -90,6 +90,10 @@ export async function maybeActivateTwilioGroup(
     return { ok: true };
   }
 
+  if (active.some((p) => !p.contact.phone)) {
+    return { ok: false, error: "All active group participants need a phone number." };
+  }
+
   const projectedAddress = conversation.twilioProjectedAddress ?? getTwilioGroupProjectedAddress();
   const client = getTwilioClient();
 
@@ -163,6 +167,9 @@ export async function sendGroupConsentIntro(params: {
   const contact = await prisma.contact.findUnique({ where: { id: params.contactId } });
   if (!contact) {
     return { ok: false, error: "Contact not found." };
+  }
+  if (!contact.phone) {
+    return { ok: false, error: "Contact has no phone number." };
   }
   if (contact.consentStatus === ConsentStatus.opted_out) {
     return { ok: false, error: "Contact opted out." };
