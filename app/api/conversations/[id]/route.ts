@@ -13,13 +13,16 @@ import { updateConversationSchema } from "@/lib/validators";
 // payload small and fast even for very long threads.
 const MESSAGE_PAGE_SIZE = 50;
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await requireSession();
   if ("error" in authResult) {
     return authResult.error;
   }
 
   const { id } = await params;
+  // After CommStack sync (or other writes), clients pass fresh=1 so Accelerate
+  // cannot serve a pre-sync snapshot of the thread.
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
 
   try {
     const conversation = await withDbRetry(() =>
@@ -53,7 +56,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         },
         // Very short cache to dedupe bursts when the same thread is open in many
         // tabs; the client merges messages by id so brief staleness is harmless.
-        cacheStrategy: cacheFor({ ttl: 3, swr: 15 }),
+        // Skip when the caller needs a post-write view (e.g. after Notify sync).
+        ...(fresh ? {} : { cacheStrategy: cacheFor({ ttl: 3, swr: 15 }) }),
       }),
     );
 

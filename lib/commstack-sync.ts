@@ -2,6 +2,9 @@ import { ConversationStatus, MessageDirection, MessageStatus } from "@prisma/cli
 import { prisma } from "@/lib/prisma";
 import { fetchCommStackDirectHistory, getCommStackPortalUserId, isCommStackConfigured } from "@/lib/commstack";
 
+/** Max Notify threads to backfill per inbox sync pass. */
+const INBOX_SYNC_LIMIT = 25;
+
 export async function syncCommStackConversation(conversationId: string): Promise<number> {
   if (!isCommStackConfigured()) {
     return 0;
@@ -85,4 +88,36 @@ export async function syncCommStackConversation(conversationId: string): Promise
   }
 
   return imported;
+}
+
+/**
+ * Pull CommStack history for recent Notify conversations so inbound replies
+ * appear in the inbox list even when those threads are not open in the UI.
+ * Realtime ingest covers this when the Node socket is connected; this is the
+ * reliable backfill for multi-instance / disconnected cases.
+ */
+export async function syncCommStackInbox(options?: {
+  limit?: number;
+}): Promise<{ synced: number; imported: number }> {
+  if (!isCommStackConfigured()) {
+    return { synced: 0, imported: 0 };
+  }
+
+  const limit = options?.limit ?? INBOX_SYNC_LIMIT;
+  const conversations = await prisma.conversation.findMany({
+    where: {
+      archivedAt: null,
+      contact: { notifyClientId: { not: null } },
+    },
+    orderBy: { lastMessageAt: "desc" },
+    take: limit,
+    select: { id: true },
+  });
+
+  let imported = 0;
+  for (const conversation of conversations) {
+    imported += await syncCommStackConversation(conversation.id);
+  }
+
+  return { synced: conversations.length, imported };
 }

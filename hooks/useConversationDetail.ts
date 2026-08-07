@@ -180,12 +180,15 @@ export function useConversationDetail(initialConversationId?: string) {
               method: "POST",
               signal: controller.signal,
             });
-            const refreshed = await fetch(`/api/conversations/${id}`, {
+            // Bypass Accelerate so newly imported Notify replies are visible immediately.
+            const refreshed = await fetch(`/api/conversations/${id}?fresh=1`, {
               signal: controller.signal,
             });
             if (refreshed.ok) {
               const refreshedData = await refreshed.json();
-              ingestConversation(refreshedData.conversation as ConversationDetail);
+              ingestConversation(refreshedData.conversation as ConversationDetail, {
+                urgent: true,
+              });
               return;
             }
           } catch (syncError) {
