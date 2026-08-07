@@ -250,7 +250,7 @@ export async function ensurePortalCommStackUser(): Promise<void> {
   const portalUserId = getCommStackPortalUserId();
   await ensureCommStackUser({
     userId: portalUserId,
-    name: "CareText Portal",
+    name: "EyeWatch LIVE®",
   });
 }
 
@@ -367,7 +367,7 @@ export async function sendCommStackDirectMessage(input: {
   const ack = await comms.messages.sendDirect({
     receiver: input.receiverUserId.trim(),
     sender: portalUserId,
-    senderName: input.senderName ?? "CareText",
+    senderName: input.senderName ?? "EyeWatch LIVE®",
     text: input.text,
   });
 

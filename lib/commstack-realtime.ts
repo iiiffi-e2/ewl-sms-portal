@@ -138,7 +138,7 @@ export async function startCommStackRealtime(): Promise<void> {
     const connectAsPortal = async () => {
       await comms.realtime.connect({
         userId: portalUserId,
-        userName: "CareText Portal",
+        userName: "EyeWatch LIVE®",
       });
       connected = Boolean(comms.realtime.connected);
       if (connected) {

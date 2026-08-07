@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       const result = await sendCommStackDirectMessage({
         receiverUserId: contact.notifyClientId!,
         text: body,
-        senderName: authResult.session.user.name ?? "CareText",
+        senderName: authResult.session.user.name ?? "EyeWatch LIVE®",
       });
 
       // Per Notify SDK 1.2, ackId is the stored message id (matches realtime message_id).
