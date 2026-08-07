@@ -10,12 +10,45 @@ import {
   normalizeCommStackBaseUrl,
 } from "@/lib/commstack";
 import { assertContactIdentityXor } from "@/lib/contact-identity";
+import {
+  contactHasActiveConversation,
+  findContactByIdentity,
+} from "@/lib/contact-reuse";
 import { createContactSchema } from "@/lib/validators";
 import { requireSession } from "@/lib/api-auth";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+async function provisionNotifyUser(contact: {
+  id: string;
+  name: string | null;
+  notifyClientId: string | null;
+  commStackAppId: string | null;
+  commStackAppName: string | null;
+  commStackBaseUrl: string | null;
+  commStackPortalUserId: string | null;
+}) {
+  if (
+    !contact.notifyClientId ||
+    !isCommStackConfigured() ||
+    !hasContactCommStackConfig(contact)
+  ) {
+    return;
+  }
+
+  try {
+    const config = getContactCommStackConfig(contact);
+    await ensureCommStackUser(config, {
+      userId: contact.notifyClientId,
+      name: contact.name,
+    });
+  } catch (error) {
+    // Contact is saved locally even if CommStack provisioning fails; send will retry.
+    console.error("Failed to provision CommStack user for contact", contact.id, error);
+  }
 }
 
 export async function GET(request: Request) {
@@ -78,57 +111,65 @@ export async function POST(request: Request) {
   }
 
   const isNotify = Boolean(notifyClientId);
-  const commStackAppId = isNotify ? normalizeOptional(parsed.data.commStackAppId) : null;
-  const commStackAppName = isNotify ? normalizeOptional(parsed.data.commStackAppName) : null;
-  const commStackBaseUrl = isNotify
-    ? normalizeOptional(parsed.data.commStackBaseUrl)
-      ? normalizeCommStackBaseUrl(parsed.data.commStackBaseUrl!)
-      : null
-    : null;
-  const commStackPortalUserId = isNotify
-    ? normalizeOptional(parsed.data.commStackPortalUserId)
-    : null;
+  const contactData = {
+    name: parsed.data.name ?? null,
+    phone,
+    notifyClientId,
+    facility: parsed.data.facility ?? null,
+    address: parsed.data.address ?? null,
+    notes: parsed.data.notes ?? null,
+    emergencyContactName: parsed.data.emergencyContactName ?? null,
+    emergencyContactPhone,
+    commStackAppId: isNotify ? normalizeOptional(parsed.data.commStackAppId) : null,
+    commStackAppName: isNotify ? normalizeOptional(parsed.data.commStackAppName) : null,
+    commStackBaseUrl: isNotify
+      ? normalizeOptional(parsed.data.commStackBaseUrl)
+        ? normalizeCommStackBaseUrl(parsed.data.commStackBaseUrl!)
+        : null
+      : null,
+    commStackPortalUserId: isNotify
+      ? normalizeOptional(parsed.data.commStackPortalUserId)
+      : null,
+  };
+
+  const existing = await findContactByIdentity({ phone, notifyClientId });
+  if (existing) {
+    if (contactHasActiveConversation(existing)) {
+      return NextResponse.json(
+        {
+          error: notifyClientId
+            ? "An active conversation already exists for this Notify client ID."
+            : "An active conversation already exists for this phone number.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Soft-deleted/archived threads leave the Contact row; reuse it so the ID can be re-added.
+    const contact = await prisma.contact.update({
+      where: { id: existing.id },
+      data: contactData,
+    });
+    await provisionNotifyUser(contact);
+    return NextResponse.json({ contact, reused: true }, { status: 200 });
+  }
 
   try {
     const contact = await prisma.contact.create({
-      data: {
-        name: parsed.data.name ?? null,
-        phone,
-        notifyClientId,
-        facility: parsed.data.facility ?? null,
-        address: parsed.data.address ?? null,
-        notes: parsed.data.notes ?? null,
-        emergencyContactName: parsed.data.emergencyContactName ?? null,
-        emergencyContactPhone,
-        commStackAppId,
-        commStackAppName,
-        commStackBaseUrl,
-        commStackPortalUserId,
-      },
+      data: contactData,
     });
 
-    if (
-      notifyClientId &&
-      isCommStackConfigured() &&
-      hasContactCommStackConfig(contact)
-    ) {
-      try {
-        const config = getContactCommStackConfig(contact);
-        await ensureCommStackUser(config, {
-          userId: notifyClientId,
-          name: contact.name,
-        });
-      } catch (error) {
-        // Contact is saved locally even if CommStack provisioning fails; send will retry.
-        console.error("Failed to provision CommStack user for contact", contact.id, error);
-      }
-    }
+    await provisionNotifyUser(contact);
 
     return NextResponse.json({ contact }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
-        { error: "A contact with this phone number or Notify client ID already exists." },
+        {
+          error: notifyClientId
+            ? "A contact with this Notify client ID already exists."
+            : "A contact with this phone number already exists.",
+        },
         { status: 409 },
       );
     }

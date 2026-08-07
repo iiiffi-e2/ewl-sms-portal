@@ -111,7 +111,7 @@ export function ContactsManager() {
         }),
       });
 
-      if (response.status === 201) {
+      if (response.ok) {
         resetForm();
         setIsFormOpen(false);
         await loadContacts();
