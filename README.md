@@ -1,4 +1,4 @@
-# CareText
+# CareText v1.0
 
 CareText is a lightweight Twilio-powered SMS inbox for nurse call center operations. It provides:
 
