@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { isValidPhoneNumber } from "@/lib/phone";
 
@@ -34,11 +35,13 @@ const EMPTY_FORM = {
 };
 
 export function ContactsManager() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [messagingContactId, setMessagingContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadContacts = useCallback(async () => {
@@ -58,6 +61,36 @@ export function ContactsManager() {
   function resetForm() {
     setForm(EMPTY_FORM);
     setError(null);
+  }
+
+  async function handleSendMessage(contactId: string) {
+    setMessagingContactId(contactId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/contacts/${contactId}/conversation`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(
+          typeof data?.error === "string"
+            ? data.error
+            : "Could not open conversation for this contact.",
+        );
+        return;
+      }
+      if (typeof data?.conversationId !== "string") {
+        setError("Could not open conversation for this contact.");
+        return;
+      }
+      router.push(`/dashboard?conversationId=${data.conversationId}`);
+    } catch (sendError) {
+      setError(
+        sendError instanceof Error ? sendError.message : "Could not open conversation.",
+      );
+    } finally {
+      setMessagingContactId(null);
+    }
   }
 
   async function handleCreate() {
@@ -292,25 +325,40 @@ export function ContactsManager() {
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
+      {error && !isFormOpen ? <p className="text-sm text-rose-700">{error}</p> : null}
+
       <div className="space-y-2 rounded-xl border border-border bg-white p-4">
         {contacts.map((contact) => (
-          <div key={contact.id} className="rounded-lg border border-border p-3">
-            <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
-            <p className="text-sm text-muted">
-              {contact.phone
-                ? contact.phone
-                : contact.notifyClientId
-                  ? `Notify: ${contact.notifyClientId}`
-                  : "No identity"}
-            </p>
-            <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
-            <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
-            {contact.notifyClientId ? (
-              <p className="mt-1 text-xs text-muted">
-                App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
+          <div
+            key={contact.id}
+            className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <div className="min-w-0">
+              <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
+              <p className="text-sm text-muted">
+                {contact.phone
+                  ? contact.phone
+                  : contact.notifyClientId
+                    ? `Notify: ${contact.notifyClientId}`
+                    : "No identity"}
               </p>
-            ) : null}
-            {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
+              <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
+              <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
+              {contact.notifyClientId ? (
+                <p className="mt-1 text-xs text-muted">
+                  App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
+                </p>
+              ) : null}
+              {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
+            </div>
+            <button
+              type="button"
+              disabled={messagingContactId === contact.id}
+              className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              onClick={() => void handleSendMessage(contact.id)}
+            >
+              {messagingContactId === contact.id ? "Opening..." : "Send Message"}
+            </button>
           </div>
         ))}
         {!contacts.length ? <p className="text-sm text-muted">No contacts found.</p> : null}

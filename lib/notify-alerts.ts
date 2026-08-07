@@ -6,6 +6,7 @@ import {
   MessageStatus,
   Prisma,
 } from "@prisma/client";
+import { ensureConversationForContact } from "@/lib/contact-conversation";
 import { formatAlertSystemMessage, type NotifyAlertPayload } from "@/lib/notify-alert-format";
 import { prisma } from "@/lib/prisma";
 
@@ -37,27 +38,6 @@ export async function findContactForAlert(payload: NotifyAlertPayload) {
   });
 }
 
-async function ensureConversationForContact(contactId: string) {
-  let conversation = await prisma.conversation.findFirst({
-    where: {
-      contactId,
-      status: { not: ConversationStatus.closed },
-      archivedAt: null,
-    },
-    orderBy: { lastMessageAt: "desc" },
-  });
-
-  if (!conversation) {
-    conversation = await prisma.conversation.create({
-      data: {
-        contactId,
-        status: ConversationStatus.new,
-      },
-    });
-  }
-
-  return conversation;
-}
 
 export async function processNotifyAlertEvent(input: {
   payload: NotifyAlertPayload;
