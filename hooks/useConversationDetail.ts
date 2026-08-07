@@ -29,6 +29,10 @@ export type ConversationDetail = {
     notes: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
+    commStackAppId: string | null;
+    commStackAppName: string | null;
+    commStackBaseUrl: string | null;
+    commStackPortalUserId: string | null;
     consentStatus: "none" | "opted_in" | "opted_out";
   } | null;
   participants?: Array<{

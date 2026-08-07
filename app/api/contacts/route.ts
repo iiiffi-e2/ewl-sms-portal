@@ -2,10 +2,21 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
-import { ensureCommStackUser, isCommStackConfigured } from "@/lib/commstack";
+import {
+  ensureCommStackUser,
+  getContactCommStackConfig,
+  hasContactCommStackConfig,
+  isCommStackConfigured,
+  normalizeCommStackBaseUrl,
+} from "@/lib/commstack";
 import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { createContactSchema } from "@/lib/validators";
 import { requireSession } from "@/lib/api-auth";
+
+function normalizeOptional(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
 
 export async function GET(request: Request) {
   const authResult = await requireSession();
@@ -66,6 +77,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const isNotify = Boolean(notifyClientId);
+  const commStackAppId = isNotify ? normalizeOptional(parsed.data.commStackAppId) : null;
+  const commStackAppName = isNotify ? normalizeOptional(parsed.data.commStackAppName) : null;
+  const commStackBaseUrl = isNotify
+    ? normalizeOptional(parsed.data.commStackBaseUrl)
+      ? normalizeCommStackBaseUrl(parsed.data.commStackBaseUrl!)
+      : null
+    : null;
+  const commStackPortalUserId = isNotify
+    ? normalizeOptional(parsed.data.commStackPortalUserId)
+    : null;
+
   try {
     const contact = await prisma.contact.create({
       data: {
@@ -77,12 +100,21 @@ export async function POST(request: Request) {
         notes: parsed.data.notes ?? null,
         emergencyContactName: parsed.data.emergencyContactName ?? null,
         emergencyContactPhone,
+        commStackAppId,
+        commStackAppName,
+        commStackBaseUrl,
+        commStackPortalUserId,
       },
     });
 
-    if (notifyClientId && isCommStackConfigured()) {
+    if (
+      notifyClientId &&
+      isCommStackConfigured() &&
+      hasContactCommStackConfig(contact)
+    ) {
       try {
-        await ensureCommStackUser({
+        const config = getContactCommStackConfig(contact);
+        await ensureCommStackUser(config, {
           userId: notifyClientId,
           name: contact.name,
         });

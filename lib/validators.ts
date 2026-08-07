@@ -21,6 +21,45 @@ const optionalNotifyClientId = z
     "Notify client ID must be a valid UUID.",
   );
 
+const optionalCommStackString = z.string().trim().min(1).max(240).optional().nullable();
+
+const optionalCommStackPortalUserId = z
+  .string()
+  .trim()
+  .optional()
+  .nullable()
+  .refine(
+    (value) => !value || isCommStackUserId(value),
+    "CommStack portal user ID must be a valid UUID.",
+  );
+
+const optionalCommStackAppId = z
+  .string()
+  .trim()
+  .optional()
+  .nullable()
+  .refine(
+    (value) => !value || isCommStackUserId(value),
+    "CommStack app ID must be a valid UUID.",
+  );
+
+const contactCommStackShape = {
+  commStackAppId: optionalCommStackAppId,
+  commStackAppName: optionalCommStackString,
+  commStackBaseUrl: optionalCommStackString,
+  commStackPortalUserId: optionalCommStackPortalUserId,
+};
+
+type ContactCommStackInput = {
+  phone?: string | null;
+  notifyClientId?: string | null;
+  name?: string | null;
+  commStackAppId?: string | null;
+  commStackAppName?: string | null;
+  commStackBaseUrl?: string | null;
+  commStackPortalUserId?: string | null;
+};
+
 function refinePhoneXorNotifyClientId(
   data: { phone?: string | null; notifyClientId?: string | null },
   ctx: z.RefinementCtx,
@@ -33,6 +72,53 @@ function refinePhoneXorNotifyClientId(
       path: hasPhone ? ["notifyClientId"] : ["phone"],
       message: "Provide either a phone number or a Notify client ID, not both.",
     });
+  }
+}
+
+const COMM_STACK_FIELD_LABELS = {
+  commStackAppId: "COMM_STACK_APP_ID",
+  commStackAppName: "COMM_STACK_APP_NAME",
+  commStackBaseUrl: "COMM_STACK_BASE_URL",
+  commStackPortalUserId: "COMM_STACK_PORTAL_USER_ID",
+} as const;
+
+/** Require CommStack fields + name for Notify; forbid them on SMS. */
+function refineNotifyCommStackConfig(data: ContactCommStackInput, ctx: z.RefinementCtx) {
+  const hasPhone = Boolean(data.phone?.trim());
+  const hasNotify = Boolean(data.notifyClientId?.trim());
+  const fields = Object.keys(COMM_STACK_FIELD_LABELS) as Array<keyof typeof COMM_STACK_FIELD_LABELS>;
+
+  if (hasPhone) {
+    for (const field of fields) {
+      if (data[field]?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field],
+          message: "CommStack settings are only allowed for Notify contacts.",
+        });
+      }
+    }
+    return;
+  }
+
+  if (!hasNotify) return;
+
+  if (!data.name?.trim()) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["name"],
+      message: "Name is required for Notify contacts.",
+    });
+  }
+
+  for (const field of fields) {
+    if (!data[field]?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: [field],
+        message: `${COMM_STACK_FIELD_LABELS[field]} is required for Notify contacts.`,
+      });
+    }
   }
 }
 
@@ -75,8 +161,12 @@ export const createConversationSchema = z
     notes: z.string().trim().max(2000).optional().nullable(),
     emergencyContactName: z.string().trim().max(120).optional().nullable(),
     emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
+    ...contactCommStackShape,
   })
-  .superRefine(refinePhoneXorNotifyClientId);
+  .superRefine((data, ctx) => {
+    refinePhoneXorNotifyClientId(data, ctx);
+    refineNotifyCommStackConfig(data, ctx);
+  });
 
 export const createContactSchema = z
   .object({
@@ -88,8 +178,12 @@ export const createContactSchema = z
     notes: z.string().trim().max(2000).optional().nullable(),
     emergencyContactName: z.string().trim().max(120).optional().nullable(),
     emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
+    ...contactCommStackShape,
   })
-  .superRefine(refinePhoneXorNotifyClientId);
+  .superRefine((data, ctx) => {
+    refinePhoneXorNotifyClientId(data, ctx);
+    refineNotifyCommStackConfig(data, ctx);
+  });
 
 export const updateContactSchema = z
   .object({
@@ -101,13 +195,20 @@ export const updateContactSchema = z
     notes: z.string().trim().max(2000).optional().nullable(),
     emergencyContactName: z.string().trim().max(120).optional().nullable(),
     emergencyContactPhone: z.string().trim().max(30).optional().nullable(),
+    ...contactCommStackShape,
   })
   .superRefine((data, ctx) => {
     const phoneProvided = Object.prototype.hasOwnProperty.call(data, "phone");
     const notifyProvided = Object.prototype.hasOwnProperty.call(data, "notifyClientId");
-    if (!phoneProvided && !notifyProvided) return;
     if (phoneProvided && notifyProvided) {
       refinePhoneXorNotifyClientId(data, ctx);
+    }
+    // Full Notify CommStack validation runs server-side after merge with existing contact.
+    if (data.notifyClientId?.trim()) {
+      refineNotifyCommStackConfig(data, ctx);
+    }
+    if (data.phone?.trim()) {
+      refineNotifyCommStackConfig(data, ctx);
     }
   });
 

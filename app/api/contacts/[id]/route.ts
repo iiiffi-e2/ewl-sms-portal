@@ -1,11 +1,42 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
-import { ensureCommStackUser, isCommStackConfigured } from "@/lib/commstack";
+import {
+  ensureCommStackUser,
+  getContactCommStackConfig,
+  hasContactCommStackConfig,
+  isCommStackConfigured,
+  normalizeCommStackBaseUrl,
+} from "@/lib/commstack";
 import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { updateContactSchema } from "@/lib/validators";
+
+function normalizeOptional(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function assertNotifyContactComplete(contact: {
+  name: string | null;
+  notifyClientId: string | null;
+  phone: string | null;
+  commStackAppId: string | null;
+  commStackAppName: string | null;
+  commStackBaseUrl: string | null;
+  commStackPortalUserId: string | null;
+}) {
+  if (!contact.notifyClientId) return;
+  if (!contact.name?.trim()) {
+    throw new Error("Name is required for Notify contacts.");
+  }
+  if (!hasContactCommStackConfig(contact)) {
+    throw new Error(
+      "Notify contacts require COMM_STACK_APP_ID, COMM_STACK_APP_NAME, COMM_STACK_BASE_URL, and COMM_STACK_PORTAL_USER_ID.",
+    );
+  }
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await requireSession();
@@ -46,6 +77,54 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     );
   }
 
+  const isNotify = Boolean(nextNotifyClientId);
+  const nextName = hasField<typeof parsed.data>("name")
+    ? (parsed.data.name ?? null)
+    : existing.name;
+
+  let nextAppId = existing.commStackAppId;
+  let nextAppName = existing.commStackAppName;
+  let nextBaseUrl = existing.commStackBaseUrl;
+  let nextPortalUserId = existing.commStackPortalUserId;
+
+  if (!isNotify) {
+    nextAppId = null;
+    nextAppName = null;
+    nextBaseUrl = null;
+    nextPortalUserId = null;
+  } else {
+    if (hasField<typeof parsed.data>("commStackAppId")) {
+      nextAppId = normalizeOptional(parsed.data.commStackAppId);
+    }
+    if (hasField<typeof parsed.data>("commStackAppName")) {
+      nextAppName = normalizeOptional(parsed.data.commStackAppName);
+    }
+    if (hasField<typeof parsed.data>("commStackBaseUrl")) {
+      const raw = normalizeOptional(parsed.data.commStackBaseUrl);
+      nextBaseUrl = raw ? normalizeCommStackBaseUrl(raw) : null;
+    }
+    if (hasField<typeof parsed.data>("commStackPortalUserId")) {
+      nextPortalUserId = normalizeOptional(parsed.data.commStackPortalUserId);
+    }
+  }
+
+  try {
+    assertNotifyContactComplete({
+      name: nextName,
+      phone: nextPhone,
+      notifyClientId: nextNotifyClientId,
+      commStackAppId: nextAppId,
+      commStackAppName: nextAppName,
+      commStackBaseUrl: nextBaseUrl,
+      commStackPortalUserId: nextPortalUserId,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid Notify contact." },
+      { status: 400 },
+    );
+  }
+
   try {
     const contact = await prisma.contact.update({
       where: { id },
@@ -69,12 +148,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
             : null
           : undefined,
+        commStackAppId: nextAppId,
+        commStackAppName: nextAppName,
+        commStackBaseUrl: nextBaseUrl,
+        commStackPortalUserId: nextPortalUserId,
       },
     });
 
-    if (contact.notifyClientId && isCommStackConfigured()) {
+    if (
+      contact.notifyClientId &&
+      isCommStackConfigured() &&
+      hasContactCommStackConfig(contact)
+    ) {
       try {
-        await ensureCommStackUser({
+        const config = getContactCommStackConfig(contact);
+        await ensureCommStackUser(config, {
           userId: contact.notifyClientId,
           name: contact.name,
         });

@@ -12,6 +12,10 @@ type Contact = {
   notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  commStackAppId: string | null;
+  commStackAppName: string | null;
+  commStackBaseUrl: string | null;
+  commStackPortalUserId: string | null;
 };
 
 type ContactFormState = {
@@ -21,6 +25,28 @@ type ContactFormState = {
   notifyClientId: string;
   facility: string;
   address: string;
+  commStackAppId: string;
+  commStackAppName: string;
+  commStackBaseUrl: string;
+  commStackPortalUserId: string;
+};
+
+type NotifyCreatePayload = {
+  name: string;
+  notifyClientId: string;
+  facility: string;
+  address: string;
+  commStackAppId: string;
+  commStackAppName: string;
+  commStackBaseUrl: string;
+  commStackPortalUserId: string;
+};
+
+type SmsCreatePayload = {
+  name: string;
+  phone: string;
+  facility: string;
+  address: string;
 };
 
 type ContactDetailsCardProps = {
@@ -28,15 +54,24 @@ type ContactDetailsCardProps = {
   isDraft?: boolean;
   draftPhone?: string;
   onDraftPhoneChange?: (phone: string) => void;
-  onCreate?: (payload: {
-    name: string;
-    phone?: string;
-    notifyClientId?: string;
-    facility: string;
-    address: string;
-  }) => Promise<void> | void;
+  onCreate?: (payload: SmsCreatePayload | NotifyCreatePayload) => Promise<void> | void;
   onUpdated?: () => Promise<void> | void;
 };
+
+function formFromContact(contact: Contact): ContactFormState {
+  return {
+    name: contact.name ?? "",
+    channel: contact.notifyClientId ? "notify" : "sms",
+    phone: contact.phone ?? "",
+    notifyClientId: contact.notifyClientId ?? "",
+    facility: contact.facility ?? "",
+    address: contact.address ?? "",
+    commStackAppId: contact.commStackAppId ?? "",
+    commStackAppName: contact.commStackAppName ?? "",
+    commStackBaseUrl: contact.commStackBaseUrl ?? "",
+    commStackPortalUserId: contact.commStackPortalUserId ?? "",
+  };
+}
 
 export function ContactDetailsCard({
   contact,
@@ -53,6 +88,10 @@ export function ContactDetailsCard({
     notifyClientId: "",
     facility: "",
     address: "",
+    commStackAppId: "",
+    commStackAppName: "",
+    commStackBaseUrl: "",
+    commStackPortalUserId: "",
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(isDraft);
@@ -65,7 +104,7 @@ export function ContactDetailsCard({
       setForm((current) => ({
         ...current,
         phone: draftPhone,
-        channel: "sms",
+        channel: current.channel,
       }));
       setIsEditing(true);
       return;
@@ -79,14 +118,7 @@ export function ContactDetailsCard({
     lastContactIdRef.current = contact.id;
 
     if (didContactChange || !isEditing) {
-      setForm({
-        name: contact.name ?? "",
-        channel: contact.notifyClientId ? "notify" : "sms",
-        phone: contact.phone ?? "",
-        notifyClientId: contact.notifyClientId ?? "",
-        facility: contact.facility ?? "",
-        address: contact.address ?? "",
-      });
+      setForm(formFromContact(contact));
     }
 
     if (didContactChange) {
@@ -111,14 +143,25 @@ export function ContactDetailsCard({
         if (!onCreate) {
           throw new Error("Unable to create conversation.");
         }
-        await onCreate({
-          name: form.name,
-          facility: form.facility,
-          address: form.address,
-          ...(form.channel === "sms"
-            ? { phone: form.phone.trim() }
-            : { notifyClientId: form.notifyClientId.trim() }),
-        });
+        if (form.channel === "sms") {
+          await onCreate({
+            name: form.name,
+            phone: form.phone.trim(),
+            facility: form.facility,
+            address: form.address,
+          });
+        } else {
+          await onCreate({
+            name: form.name,
+            notifyClientId: form.notifyClientId.trim(),
+            facility: form.facility,
+            address: form.address,
+            commStackAppId: form.commStackAppId.trim(),
+            commStackAppName: form.commStackAppName.trim(),
+            commStackBaseUrl: form.commStackBaseUrl.trim(),
+            commStackPortalUserId: form.commStackPortalUserId.trim(),
+          });
+        }
         setSuccess("Conversation saved.");
         return;
       }
@@ -135,8 +178,22 @@ export function ContactDetailsCard({
           facility: form.facility.trim() ? form.facility.trim() : null,
           address: form.address.trim() ? form.address.trim() : null,
           ...(form.channel === "sms"
-            ? { phone: form.phone.trim(), notifyClientId: null }
-            : { notifyClientId: form.notifyClientId.trim(), phone: null }),
+            ? {
+                phone: form.phone.trim(),
+                notifyClientId: null,
+                commStackAppId: null,
+                commStackAppName: null,
+                commStackBaseUrl: null,
+                commStackPortalUserId: null,
+              }
+            : {
+                notifyClientId: form.notifyClientId.trim(),
+                phone: null,
+                commStackAppId: form.commStackAppId.trim(),
+                commStackAppName: form.commStackAppName.trim(),
+                commStackBaseUrl: form.commStackBaseUrl.trim(),
+                commStackPortalUserId: form.commStackPortalUserId.trim(),
+              }),
         }),
       });
 
@@ -187,14 +244,7 @@ export function ContactDetailsCard({
                 return;
               }
               if (isEditing) {
-                setForm({
-                  name: contact.name ?? "",
-                  channel: contact.notifyClientId ? "notify" : "sms",
-                  phone: contact.phone ?? "",
-                  notifyClientId: contact.notifyClientId ?? "",
-                  facility: contact.facility ?? "",
-                  address: contact.address ?? "",
-                });
+                setForm(formFromContact(contact));
                 setError(null);
                 setSuccess(null);
                 setIsEditing(false);
@@ -215,12 +265,15 @@ export function ContactDetailsCard({
       ) : null}
       <form className="mt-3 space-y-3" onSubmit={handleSubmit}>
         <label className="block">
-          <span className="text-xs font-medium text-muted">Contact name</span>
+          <span className="text-xs font-medium text-muted">
+            Contact name{form.channel === "notify" ? " (required)" : ""}
+          </span>
           <input
             className="mt-1 w-full rounded-lg border border-border px-3 py-2"
             value={form.name}
             onChange={(event) => updateForm({ name: event.target.value })}
             placeholder="Contact name"
+            required={form.channel === "notify"}
             readOnly={!isEditing}
           />
         </label>
@@ -279,17 +332,63 @@ export function ContactDetailsCard({
             />
           </label>
         ) : (
-          <label className="block">
-            <span className="text-xs font-medium text-muted">Notify client ID</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-              value={form.notifyClientId}
-              onChange={(event) => updateForm({ notifyClientId: event.target.value })}
-              placeholder="Notify client UUID"
-              required={form.channel === "notify"}
-              readOnly={!isEditing}
-            />
-          </label>
+          <>
+            <label className="block">
+              <span className="text-xs font-medium text-muted">Notify client UUID</span>
+              <input
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                value={form.notifyClientId}
+                onChange={(event) => updateForm({ notifyClientId: event.target.value })}
+                placeholder="Notify client UUID"
+                required
+                readOnly={!isEditing}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-muted">COMM_STACK_APP_ID</span>
+              <input
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                value={form.commStackAppId}
+                onChange={(event) => updateForm({ commStackAppId: event.target.value })}
+                placeholder="Application UUID"
+                required
+                readOnly={!isEditing}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-muted">COMM_STACK_APP_NAME</span>
+              <input
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                value={form.commStackAppName}
+                onChange={(event) => updateForm({ commStackAppName: event.target.value })}
+                placeholder="Application name"
+                required
+                readOnly={!isEditing}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-muted">COMM_STACK_BASE_URL</span>
+              <input
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                value={form.commStackBaseUrl}
+                onChange={(event) => updateForm({ commStackBaseUrl: event.target.value })}
+                placeholder="qsscommbe3.notifync.com"
+                required
+                readOnly={!isEditing}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-muted">COMM_STACK_PORTAL_USER_ID</span>
+              <input
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                value={form.commStackPortalUserId}
+                onChange={(event) => updateForm({ commStackPortalUserId: event.target.value })}
+                placeholder="Portal sender UUID"
+                required
+                readOnly={!isEditing}
+              />
+            </label>
+          </>
         )}
         <label className="block">
           <span className="text-xs font-medium text-muted">Address</span>

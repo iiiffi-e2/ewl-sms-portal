@@ -56,6 +56,12 @@ Required for group messaging (Twilio Conversations):
 - `TWILIO_MESSAGING_SERVICE_SID` — the Messaging Service that routes group SMS/MMS
 - `TWILIO_GROUP_PROJECTED_ADDRESS` — a second Twilio number that represents portal users inside the group MMS thread
 
+Required for Notify / CommStack messaging:
+
+- `COMM_STACK_ENV` — `dev` or `production`
+
+Per-community `COMM_STACK_APP_ID`, `COMM_STACK_APP_NAME`, `COMM_STACK_BASE_URL`, and `COMM_STACK_PORTAL_USER_ID` are entered on each Notify contact (Contacts page or conversation contact details), not as environment variables.
+
 ## Database Setup
 
 Run migrations:

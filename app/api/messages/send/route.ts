@@ -5,10 +5,12 @@ import { requireSession } from "@/lib/api-auth";
 import {
   CommStackError,
   ensureCommStackUser,
+  getContactCommStackConfig,
+  hasContactCommStackConfig,
   isCommStackConfigured,
   sendCommStackDirectMessage,
 } from "@/lib/commstack";
-import { startCommStackRealtime } from "@/lib/commstack-realtime";
+import { ensureCommStackRealtimeForConfig, startCommStackRealtime } from "@/lib/commstack-realtime";
 import { evaluateOutboundConsent } from "@/lib/consent";
 import { isNotifyContact } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
@@ -44,18 +46,25 @@ export async function POST(request: Request) {
 
   if (!contact && parsed.data.notifyClientId) {
     const notifyClientId = parsed.data.notifyClientId.trim();
-    contact = await prisma.contact.upsert({
-      where: { notifyClientId },
-      update: {
-        name: contactName ?? undefined,
-        facility: facility ?? undefined,
-      },
-      create: {
-        notifyClientId,
-        name: contactName ?? null,
-        facility: facility ?? null,
-      },
-    });
+    contact = await prisma.contact.findUnique({ where: { notifyClientId } });
+    if (!contact) {
+      return NextResponse.json(
+        {
+          error:
+            "Notify contact not found. Create the contact with CommStack settings before messaging.",
+        },
+        { status: 400 },
+      );
+    }
+    if (contactName || facility) {
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          name: contactName ?? undefined,
+          facility: facility ?? undefined,
+        },
+      });
+    }
   }
 
   if (!contact && parsed.data.phone) {
@@ -129,24 +138,46 @@ export async function POST(request: Request) {
         where: { id: queuedMessage.id },
         data: {
           status: MessageStatus.failed,
-          errorMessage: "CommStack is not configured.",
+          errorMessage: "CommStack is not configured. Set COMM_STACK_ENV.",
         },
       });
-      return NextResponse.json({ error: "CommStack is not configured." }, { status: 503 });
+      return NextResponse.json(
+        { error: "CommStack is not configured. Set COMM_STACK_ENV." },
+        { status: 503 },
+      );
+    }
+
+    if (!hasContactCommStackConfig(contact)) {
+      await prisma.message.update({
+        where: { id: queuedMessage.id },
+        data: {
+          status: MessageStatus.failed,
+          errorMessage: "Notify contact is missing CommStack settings.",
+        },
+      });
+      return NextResponse.json(
+        { error: "Notify contact is missing CommStack settings." },
+        { status: 400 },
+      );
     }
 
     try {
+      const config = getContactCommStackConfig(contact);
+
       // Keep the portal realtime socket alive so replies can arrive after send.
-      void startCommStackRealtime().catch((error) => {
+      void ensureCommStackRealtimeForConfig(config).catch((error) => {
         console.error("[commstack] realtime ensure-on-send failed", error);
       });
+      void startCommStackRealtime().catch((error) => {
+        console.error("[commstack] realtime ensure-all-on-send failed", error);
+      });
 
-      await ensureCommStackUser({
+      await ensureCommStackUser(config, {
         userId: contact.notifyClientId!,
         name: contact.name,
       });
 
-      const result = await sendCommStackDirectMessage({
+      const result = await sendCommStackDirectMessage(config, {
         receiverUserId: contact.notifyClientId!,
         text: body,
         senderName: authResult.session.user.name ?? "EyeWatch LIVE®",

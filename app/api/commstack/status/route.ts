@@ -2,14 +2,18 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import {
   getCommStackConfigDiagnostics,
+  getContactCommStackConfig,
+  hasContactCommStackConfig,
   isCommStackConfigured,
   verifyCommStackAccess,
 } from "@/lib/commstack";
 import {
   getCommStackRealtimeError,
+  getCommStackRealtimeStatus,
   isCommStackRealtimeConnected,
   startCommStackRealtime,
 } from "@/lib/commstack-realtime";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const authResult = await requireSession();
@@ -17,8 +21,9 @@ export async function GET() {
     return authResult.error;
   }
 
+  const diagnostics = getCommStackConfigDiagnostics();
+
   if (!isCommStackConfigured()) {
-    const diagnostics = getCommStackConfigDiagnostics();
     return NextResponse.json({
       configured: false,
       verified: false,
@@ -29,24 +34,74 @@ export async function GET() {
     });
   }
 
-  try {
-    await verifyCommStackAccess();
-  } catch (error) {
-    return NextResponse.json(
-      {
-        configured: true,
-        verified: false,
-        realtimeConnected: isCommStackRealtimeConnected(),
-        error: error instanceof Error ? error.message : "CommStack verification failed.",
-      },
-      { status: 502 },
-    );
+  const notifyContacts = await prisma.contact.findMany({
+    where: {
+      notifyClientId: { not: null },
+      commStackAppId: { not: null },
+    },
+    select: {
+      id: true,
+      name: true,
+      notifyClientId: true,
+      commStackAppId: true,
+      commStackAppName: true,
+      commStackBaseUrl: true,
+      commStackPortalUserId: true,
+    },
+    take: 50,
+  });
+
+  const communities = new Map<
+    string,
+    {
+      baseUrl: string;
+      appId: string;
+      appName: string;
+      portalUserId: string;
+      contactCount: number;
+    }
+  >();
+
+  for (const contact of notifyContacts) {
+    if (!hasContactCommStackConfig(contact)) continue;
+    try {
+      const config = getContactCommStackConfig(contact);
+      const key = `${config.baseUrl}|${config.appId}|${config.portalUserId}`;
+      const existing = communities.get(key);
+      if (existing) {
+        existing.contactCount += 1;
+      } else {
+        communities.set(key, {
+          baseUrl: config.baseUrl,
+          appId: config.appId,
+          appName: config.appName,
+          portalUserId: config.portalUserId,
+          contactCount: 1,
+        });
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
+  const communityList = [...communities.values()];
+  let verified = false;
+  let verifyError: string | null = null;
+
+  if (communityList.length > 0) {
+    try {
+      const sample = notifyContacts.find((c) => hasContactCommStackConfig(c));
+      if (sample) {
+        await verifyCommStackAccess(getContactCommStackConfig(sample));
+        verified = true;
+      }
+    } catch (error) {
+      verifyError = error instanceof Error ? error.message : "CommStack verification failed.";
+    }
   }
 
   let realtimeError: string | null = null;
   try {
-    // Ensure realtime is up in this Node process (instrumentation alone is not
-    // always enough under next dev / multiple workers).
     await startCommStackRealtime();
   } catch (error) {
     realtimeError = error instanceof Error ? error.message : String(error);
@@ -54,11 +109,15 @@ export async function GET() {
 
   return NextResponse.json({
     configured: true,
-    verified: true,
+    verified,
+    verifyError,
     realtimeConnected: isCommStackRealtimeConnected(),
     realtimeError: realtimeError ?? getCommStackRealtimeError(),
-    baseUrl: process.env.COMM_STACK_BASE_URL?.trim() ?? null,
+    realtime: getCommStackRealtimeStatus(),
     env: process.env.COMM_STACK_ENV?.trim() ?? null,
-    appId: process.env.COMM_STACK_APP_ID?.trim() ?? null,
+    communities: communityList,
+    notifyContactCount: notifyContacts.length,
+    checks: diagnostics.checks,
+    missing: diagnostics.missing,
   });
 }

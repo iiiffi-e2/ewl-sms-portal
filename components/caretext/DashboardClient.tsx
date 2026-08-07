@@ -54,6 +54,10 @@ type ConversationListResponse = {
       notes: string | null;
       emergencyContactName: string | null;
       emergencyContactPhone: string | null;
+      commStackAppId: string | null;
+      commStackAppName: string | null;
+      commStackBaseUrl: string | null;
+      commStackPortalUserId: string | null;
       consentStatus: "none" | "opted_in" | "opted_out";
     } | null;
     participants?: ConversationParticipant[];
@@ -330,6 +334,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       notifyClientId?: string;
       facility: string;
       address: string;
+      commStackAppId?: string;
+      commStackAppName?: string;
+      commStackBaseUrl?: string;
+      commStackPortalUserId?: string;
     }) => {
       const response = await fetch("/api/conversations", {
         method: "POST",
@@ -337,7 +345,13 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         body: JSON.stringify({
           name: payload.name.trim() ? payload.name.trim() : null,
           ...(payload.notifyClientId?.trim()
-            ? { notifyClientId: payload.notifyClientId.trim() }
+            ? {
+                notifyClientId: payload.notifyClientId.trim(),
+                commStackAppId: payload.commStackAppId?.trim(),
+                commStackAppName: payload.commStackAppName?.trim(),
+                commStackBaseUrl: payload.commStackBaseUrl?.trim(),
+                commStackPortalUserId: payload.commStackPortalUserId?.trim(),
+              }
             : { phone: payload.phone?.trim() }),
           facility: payload.facility.trim() ? payload.facility.trim() : null,
           address: payload.address.trim() ? payload.address.trim() : null,

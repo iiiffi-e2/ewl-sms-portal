@@ -1,6 +1,9 @@
 /**
  * CareText wrapper around @notify/commstack-sdk v1.2+.
  * Keeps a small app-facing API so routes don't depend on SDK internals.
+ *
+ * Per-community credentials live on each Notify contact. Only COMM_STACK_ENV
+ * (and optional timeout/token) remain as process env.
  */
 
 import { CommStack, CommStackError, type CommStackEnv } from "@notify/commstack-sdk";
@@ -8,13 +11,21 @@ import { isCommStackUserId } from "@/lib/commstack-ids";
 
 export { CommStackError, isCommStackUserId };
 
-type CommStackConfig = {
+export type ContactCommStackConfig = {
   baseUrl: string;
-  env: CommStackEnv;
   appId: string;
+  appName: string;
   portalUserId: string;
-  appName?: string;
-  timeoutMs?: number;
+  env: CommStackEnv;
+};
+
+export type ContactCommStackFields = {
+  name?: string | null;
+  notifyClientId?: string | null;
+  commStackAppId?: string | null;
+  commStackAppName?: string | null;
+  commStackBaseUrl?: string | null;
+  commStackPortalUserId?: string | null;
 };
 
 type CommStackUser = {
@@ -49,27 +60,40 @@ function readEnv(name: string): string | undefined {
   return trimmed || undefined;
 }
 
+export function normalizeCommStackBaseUrl(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "")
+    .split("/")[0]
+    .split(":")[0];
+}
+
+export function getCommStackEnv(): CommStackEnv {
+  const envRaw = readEnv("COMM_STACK_ENV")?.toLowerCase();
+  if (envRaw !== "dev" && envRaw !== "production") {
+    throw new CommStackError(
+      "INVALID_REQUEST",
+      "COMM_STACK_ENV must be 'dev' or 'production'.",
+    );
+  }
+  return envRaw;
+}
+
 export type CommStackConfigDiagnostics = {
   configured: boolean;
   checks: {
-    baseUrl: boolean;
     env: boolean;
     envRaw: string | null;
-    portalUserId: boolean;
-    appIdOrName: boolean;
   };
   missing: string[];
 };
 
+/** True when the global CommStack env (COMM_STACK_ENV) is ready. */
 export function getCommStackConfigDiagnostics(): CommStackConfigDiagnostics {
-  const baseUrl = Boolean(readEnv("COMM_STACK_BASE_URL"));
   const envRaw = readEnv("COMM_STACK_ENV")?.toLowerCase() ?? null;
   const envOk = envRaw === "dev" || envRaw === "production";
-  const portalUserId = Boolean(readEnv("COMM_STACK_PORTAL_USER_ID"));
-  const appIdOrName = Boolean(readEnv("COMM_STACK_APP_ID") || readEnv("COMM_STACK_APP_NAME"));
-
   const missing: string[] = [];
-  if (!baseUrl) missing.push("COMM_STACK_BASE_URL");
   if (!envOk) {
     missing.push(
       envRaw == null
@@ -77,68 +101,10 @@ export function getCommStackConfigDiagnostics(): CommStackConfigDiagnostics {
         : `COMM_STACK_ENV (got ${JSON.stringify(envRaw)}; need "dev" or "production")`,
     );
   }
-  if (!portalUserId) missing.push("COMM_STACK_PORTAL_USER_ID");
-  if (!appIdOrName) missing.push("COMM_STACK_APP_ID or COMM_STACK_APP_NAME");
-
   return {
-    configured: baseUrl && envOk && portalUserId && appIdOrName,
-    checks: {
-      baseUrl,
-      env: envOk,
-      envRaw,
-      portalUserId,
-      appIdOrName,
-    },
+    configured: envOk,
+    checks: { env: envOk, envRaw },
     missing,
-  };
-}
-
-function readBaseConfig(): Omit<CommStackConfig, "appId"> & { appId?: string } {
-  const baseUrl = readEnv("COMM_STACK_BASE_URL")
-    ?.replace(/^https?:\/\//, "")
-    .replace(/\/$/, "")
-    .split("/")[0]
-    .split(":")[0];
-  const envRaw = readEnv("COMM_STACK_ENV")?.toLowerCase();
-  const portalUserId = readEnv("COMM_STACK_PORTAL_USER_ID");
-  const appId = readEnv("COMM_STACK_APP_ID");
-  const appName = readEnv("COMM_STACK_APP_NAME");
-
-  if (!baseUrl || !envRaw || !portalUserId) {
-    throw new CommStackError(
-      "INVALID_REQUEST",
-      "CommStack is not configured. Set COMM_STACK_BASE_URL, COMM_STACK_ENV, and COMM_STACK_PORTAL_USER_ID.",
-    );
-  }
-
-  if (envRaw !== "dev" && envRaw !== "production") {
-    throw new CommStackError(
-      "INVALID_REQUEST",
-      "COMM_STACK_ENV must be 'dev' or 'production'.",
-    );
-  }
-
-  if (!isCommStackUserId(portalUserId)) {
-    throw new CommStackError(
-      "INVALID_REQUEST",
-      "COMM_STACK_PORTAL_USER_ID must be a valid UUID.",
-    );
-  }
-
-  if (!appId && !appName) {
-    throw new CommStackError(
-      "INVALID_REQUEST",
-      "Set COMM_STACK_APP_ID, or COMM_STACK_APP_NAME to register an application.",
-    );
-  }
-
-  return {
-    baseUrl,
-    env: envRaw,
-    appId,
-    appName,
-    portalUserId,
-    timeoutMs: Number(readEnv("COMM_STACK_TIMEOUT_MS") ?? 15000),
   };
 }
 
@@ -146,73 +112,107 @@ export function isCommStackConfigured(): boolean {
   return getCommStackConfigDiagnostics().configured;
 }
 
-let rootClient: CommStack | null = null;
-let scopedClient: CommStack | null = null;
-let resolvedAppId: string | null = null;
+export function hasContactCommStackConfig(contact: ContactCommStackFields): boolean {
+  return Boolean(
+    contact.commStackAppId?.trim() &&
+      contact.commStackAppName?.trim() &&
+      contact.commStackBaseUrl?.trim() &&
+      contact.commStackPortalUserId?.trim(),
+  );
+}
 
-function getRootClient(): CommStack {
-  const config = readBaseConfig();
-  if (!rootClient) {
-    rootClient = new CommStack({
+export function getContactCommStackConfig(contact: ContactCommStackFields): ContactCommStackConfig {
+  if (!isCommStackConfigured()) {
+    throw new CommStackError(
+      "INVALID_REQUEST",
+      "CommStack is not configured. Set COMM_STACK_ENV to 'dev' or 'production'.",
+    );
+  }
+
+  const appId = contact.commStackAppId?.trim();
+  const appName = contact.commStackAppName?.trim();
+  const baseUrlRaw = contact.commStackBaseUrl?.trim();
+  const portalUserId = contact.commStackPortalUserId?.trim();
+
+  if (!appId || !appName || !baseUrlRaw || !portalUserId) {
+    throw new CommStackError(
+      "INVALID_REQUEST",
+      "Notify contact is missing CommStack settings (APP_ID, APP_NAME, BASE_URL, PORTAL_USER_ID).",
+    );
+  }
+
+  const baseUrl = normalizeCommStackBaseUrl(baseUrlRaw);
+  if (!baseUrl) {
+    throw new CommStackError("INVALID_REQUEST", "CommStack BASE_URL is invalid.");
+  }
+
+  if (!isCommStackUserId(portalUserId)) {
+    throw new CommStackError(
+      "INVALID_REQUEST",
+      "CommStack PORTAL_USER_ID must be a valid UUID.",
+    );
+  }
+
+  if (!isCommStackUserId(appId)) {
+    throw new CommStackError("INVALID_REQUEST", "CommStack APP_ID must be a valid UUID.");
+  }
+
+  return {
+    baseUrl,
+    appId,
+    appName,
+    portalUserId,
+    env: getCommStackEnv(),
+  };
+}
+
+function clientCacheKey(config: Pick<ContactCommStackConfig, "baseUrl" | "appId">): string {
+  return `${config.baseUrl}|${config.appId}`;
+}
+
+const rootClients = new Map<string, CommStack>();
+const scopedClients = new Map<string, CommStack>();
+
+function getRootClient(config: ContactCommStackConfig): CommStack {
+  const key = config.baseUrl;
+  let client = rootClients.get(key);
+  if (!client) {
+    client = new CommStack({
       baseUrl: config.baseUrl,
       env: config.env,
-      timeout: config.timeoutMs,
+      timeout: Number(readEnv("COMM_STACK_TIMEOUT_MS") ?? 15000),
     });
+    rootClients.set(key, client);
   }
-  return rootClient;
+  return client;
 }
 
-async function resolveAppId(): Promise<string> {
-  if (resolvedAppId) return resolvedAppId;
+export async function getScopedCommStackClient(config: ContactCommStackConfig): Promise<CommStack> {
+  const key = clientCacheKey(config);
+  let scoped = scopedClients.get(key);
+  if (scoped) return scoped;
 
-  const config = readBaseConfig();
-  if (config.appId) {
-    resolvedAppId = config.appId;
-    return resolvedAppId;
-  }
-
-  const client = getRootClient();
-  const app = await client.applications.register({
-    name: config.appName!,
-  });
-  resolvedAppId = app.appId;
-  console.warn(
-    `[commstack] Registered application "${config.appName}". Persist this as COMM_STACK_APP_ID=${app.appId}`,
-  );
-  return resolvedAppId;
+  const root = getRootClient(config);
+  scoped = root.forApplication(config.appId);
+  scopedClients.set(key, scoped);
+  return scoped;
 }
 
-export async function getScopedCommStackClient(): Promise<CommStack> {
-  if (scopedClient) return scopedClient;
-  const appId = await resolveAppId();
-  scopedClient = getRootClient().forApplication(appId);
-  return scopedClient;
-}
-
-export function getCommStackPortalUserId(): string {
-  return readBaseConfig().portalUserId;
-}
-
-export async function verifyCommStackAccess(): Promise<boolean> {
-  const config = readBaseConfig();
-  const root = getRootClient();
+export async function verifyCommStackAccess(config: ContactCommStackConfig): Promise<boolean> {
+  const root = getRootClient(config);
   await root.verifyAccess();
-
-  if (config.appId) {
-    await root.forApplication(config.appId).verifyAccess();
-    resolvedAppId = config.appId;
-    scopedClient = root.forApplication(config.appId);
-  } else {
-    await getScopedCommStackClient();
-  }
-
+  await root.forApplication(config.appId).verifyAccess();
+  scopedClients.set(clientCacheKey(config), root.forApplication(config.appId));
   return true;
 }
 
-export async function ensureCommStackUser(input: {
-  userId: string;
-  name?: string | null;
-}): Promise<CommStackUser> {
+export async function ensureCommStackUser(
+  config: ContactCommStackConfig,
+  input: {
+    userId: string;
+    name?: string | null;
+  },
+): Promise<CommStackUser> {
   if (!isCommStackUserId(input.userId)) {
     throw new CommStackError(
       "INVALID_REQUEST",
@@ -221,7 +221,7 @@ export async function ensureCommStackUser(input: {
     );
   }
 
-  const comms = await getScopedCommStackClient();
+  const comms = await getScopedCommStackClient(config);
   try {
     const user = await comms.users.create({
       userId: input.userId.trim(),
@@ -246,19 +246,21 @@ export async function ensureCommStackUser(input: {
   }
 }
 
-export async function ensurePortalCommStackUser(): Promise<void> {
-  const portalUserId = getCommStackPortalUserId();
-  await ensureCommStackUser({
-    userId: portalUserId,
+export async function ensurePortalCommStackUser(config: ContactCommStackConfig): Promise<void> {
+  await ensureCommStackUser(config, {
+    userId: config.portalUserId,
     name: "EyeWatch LIVE®",
   });
 }
 
-export async function getCommStackUser(userId: string): Promise<CommStackUser | null> {
+export async function getCommStackUser(
+  config: ContactCommStackConfig,
+  userId: string,
+): Promise<CommStackUser | null> {
   if (!isCommStackUserId(userId)) {
     return null;
   }
-  const comms = await getScopedCommStackClient();
+  const comms = await getScopedCommStackClient(config);
   try {
     const user = await comms.users.get(userId.trim());
     return {
@@ -274,11 +276,17 @@ export async function getCommStackUser(userId: string): Promise<CommStackUser | 
   }
 }
 
-export async function diagnoseCommStackDirectThread(input: {
-  otherUserId: string;
-}): Promise<{
+export async function diagnoseCommStackDirectThread(
+  config: ContactCommStackConfig,
+  input: {
+    otherUserId: string;
+  },
+): Promise<{
   portalUserId: string;
   otherUserId: string;
+  appId: string;
+  appName: string;
+  baseUrl: string;
   portalUser: CommStackUser | null;
   otherUser: CommStackUser | null;
   historyCount: number;
@@ -292,14 +300,14 @@ export async function diagnoseCommStackDirectThread(input: {
   }>;
   notes: string[];
 }> {
-  const portalUserId = getCommStackPortalUserId();
+  const portalUserId = config.portalUserId;
   const otherUserId = input.otherUserId.trim();
   const notes: string[] = [];
 
-  await verifyCommStackAccess();
+  await verifyCommStackAccess(config);
 
-  const portalUser = await getCommStackUser(portalUserId);
-  const otherUser = await getCommStackUser(otherUserId);
+  const portalUser = await getCommStackUser(config, portalUserId);
+  const otherUser = await getCommStackUser(config, otherUserId);
 
   if (!portalUser) {
     notes.push("Portal user is not registered in CommStack. Sending may still ack but delivery can fail.");
@@ -316,7 +324,7 @@ export async function diagnoseCommStackDirectThread(input: {
 
   let history: CommStackMessage[] = [];
   try {
-    history = await fetchCommStackDirectHistory({ otherUserId, limit: 10 });
+    history = await fetchCommStackDirectHistory(config, { otherUserId, limit: 10 });
   } catch (error) {
     notes.push(
       `Failed to read directHistory: ${error instanceof Error ? error.message : String(error)}`,
@@ -337,6 +345,9 @@ export async function diagnoseCommStackDirectThread(input: {
   return {
     portalUserId,
     otherUserId,
+    appId: config.appId,
+    appName: config.appName,
+    baseUrl: config.baseUrl,
     portalUser,
     otherUser,
     historyCount: history.length,
@@ -352,21 +363,23 @@ export async function diagnoseCommStackDirectThread(input: {
   };
 }
 
-export async function sendCommStackDirectMessage(input: {
-  receiverUserId: string;
-  text: string;
-  senderName?: string | null;
-}): Promise<{ messageId: string }> {
-  const portalUserId = getCommStackPortalUserId();
-  const comms = await getScopedCommStackClient();
+export async function sendCommStackDirectMessage(
+  config: ContactCommStackConfig,
+  input: {
+    receiverUserId: string;
+    text: string;
+    senderName?: string | null;
+  },
+): Promise<{ messageId: string }> {
+  const comms = await getScopedCommStackClient(config);
 
-  await ensureCommStackUser({ userId: input.receiverUserId });
-  await ensurePortalCommStackUser();
+  await ensureCommStackUser(config, { userId: input.receiverUserId });
+  await ensurePortalCommStackUser(config);
 
   // Per Notify v1.2: ackId is the stored message id (matches realtime message_id).
   const ack = await comms.messages.sendDirect({
     receiver: input.receiverUserId.trim(),
-    sender: portalUserId,
+    sender: config.portalUserId,
     senderName: input.senderName ?? "EyeWatch LIVE®",
     text: input.text,
   });
@@ -374,15 +387,17 @@ export async function sendCommStackDirectMessage(input: {
   return { messageId: String(ack.ackId) };
 }
 
-export async function fetchCommStackDirectHistory(input: {
-  otherUserId: string;
-  limit?: number;
-}): Promise<CommStackMessage[]> {
-  const portalUserId = getCommStackPortalUserId();
-  const comms = await getScopedCommStackClient();
+export async function fetchCommStackDirectHistory(
+  config: ContactCommStackConfig,
+  input: {
+    otherUserId: string;
+    limit?: number;
+  },
+): Promise<CommStackMessage[]> {
+  const comms = await getScopedCommStackClient(config);
 
   const page = await comms.messages.directHistory({
-    userId: portalUserId,
+    userId: config.portalUserId,
     otherUserId: input.otherUserId.trim(),
     limit: input.limit ?? 50,
     offset: 0,

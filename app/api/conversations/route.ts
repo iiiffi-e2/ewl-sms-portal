@@ -4,11 +4,22 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
 import { dbErrorResponse } from "@/lib/api-errors";
 import { cacheFor, withDbRetry } from "@/lib/db";
-import { ensureCommStackUser, isCommStackConfigured } from "@/lib/commstack";
+import {
+  ensureCommStackUser,
+  getContactCommStackConfig,
+  hasContactCommStackConfig,
+  isCommStackConfigured,
+  normalizeCommStackBaseUrl,
+} from "@/lib/commstack";
 import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
+
+function normalizeOptional(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
 
 // Hard cap on how many conversations the inbox list returns. Without this the
 // query fetched *every* non-archived conversation, each with a correlated
@@ -153,6 +164,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const isNotify = Boolean(notifyClientId);
+  const commStackAppId = isNotify ? normalizeOptional(parsed.data.commStackAppId) : null;
+  const commStackAppName = isNotify ? normalizeOptional(parsed.data.commStackAppName) : null;
+  const commStackBaseUrl = isNotify
+    ? normalizeOptional(parsed.data.commStackBaseUrl)
+      ? normalizeCommStackBaseUrl(parsed.data.commStackBaseUrl!)
+      : null
+    : null;
+  const commStackPortalUserId = isNotify
+    ? normalizeOptional(parsed.data.commStackPortalUserId)
+    : null;
+
   const contact = phone
     ? await prisma.contact.upsert({
         where: { phone },
@@ -163,6 +186,10 @@ export async function POST(request: Request) {
           notes: parsed.data.notes ?? undefined,
           emergencyContactName: parsed.data.emergencyContactName ?? undefined,
           emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+          commStackAppId: null,
+          commStackAppName: null,
+          commStackBaseUrl: null,
+          commStackPortalUserId: null,
         },
         create: {
           phone,
@@ -183,6 +210,10 @@ export async function POST(request: Request) {
           notes: parsed.data.notes ?? undefined,
           emergencyContactName: parsed.data.emergencyContactName ?? undefined,
           emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+          commStackAppId: commStackAppId ?? undefined,
+          commStackAppName: commStackAppName ?? undefined,
+          commStackBaseUrl: commStackBaseUrl ?? undefined,
+          commStackPortalUserId: commStackPortalUserId ?? undefined,
         },
         create: {
           notifyClientId: notifyClientId!,
@@ -192,12 +223,21 @@ export async function POST(request: Request) {
           notes: parsed.data.notes ?? null,
           emergencyContactName: parsed.data.emergencyContactName ?? null,
           emergencyContactPhone: normalizedEmergencyPhone,
+          commStackAppId,
+          commStackAppName,
+          commStackBaseUrl,
+          commStackPortalUserId,
         },
       });
 
-  if (contact.notifyClientId && isCommStackConfigured()) {
+  if (
+    contact.notifyClientId &&
+    isCommStackConfigured() &&
+    hasContactCommStackConfig(contact)
+  ) {
     try {
-      await ensureCommStackUser({
+      const config = getContactCommStackConfig(contact);
+      await ensureCommStackUser(config, {
         userId: contact.notifyClientId,
         name: contact.name,
       });

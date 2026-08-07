@@ -1,6 +1,11 @@
 import { ConversationStatus, MessageDirection, MessageStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { fetchCommStackDirectHistory, getCommStackPortalUserId, isCommStackConfigured } from "@/lib/commstack";
+import {
+  fetchCommStackDirectHistory,
+  getContactCommStackConfig,
+  hasContactCommStackConfig,
+  isCommStackConfigured,
+} from "@/lib/commstack";
 
 /** Max Notify threads to backfill per inbox sync pass. */
 const INBOX_SYNC_LIMIT = 25;
@@ -15,12 +20,12 @@ export async function syncCommStackConversation(conversationId: string): Promise
     include: { contact: true },
   });
 
-  if (!conversation?.contact?.notifyClientId) {
+  if (!conversation?.contact?.notifyClientId || !hasContactCommStackConfig(conversation.contact)) {
     return 0;
   }
 
-  const portalUserId = getCommStackPortalUserId();
-  const history = await fetchCommStackDirectHistory({
+  const config = getContactCommStackConfig(conversation.contact);
+  const history = await fetchCommStackDirectHistory(config, {
     otherUserId: conversation.contact.notifyClientId,
     limit: 50,
   });
@@ -35,7 +40,7 @@ export async function syncCommStackConversation(conversationId: string): Promise
     });
     if (existing) continue;
 
-    const isOutbound = item.sender === portalUserId;
+    const isOutbound = item.sender === config.portalUserId;
 
     // CareText already writes portal outbound on send. Re-importing history echoes
     // creates duplicate bubbles (especially when ackId and history messageId differ).
@@ -107,7 +112,10 @@ export async function syncCommStackInbox(options?: {
   const conversations = await prisma.conversation.findMany({
     where: {
       archivedAt: null,
-      contact: { notifyClientId: { not: null } },
+      contact: {
+        notifyClientId: { not: null },
+        commStackAppId: { not: null },
+      },
     },
     orderBy: { lastMessageAt: "desc" },
     take: limit,

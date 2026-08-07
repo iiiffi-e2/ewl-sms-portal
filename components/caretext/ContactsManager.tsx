@@ -11,6 +11,10 @@ type Contact = {
   facility: string | null;
   address: string | null;
   notes: string | null;
+  commStackAppId: string | null;
+  commStackAppName: string | null;
+  commStackBaseUrl: string | null;
+  commStackPortalUserId: string | null;
 };
 
 type Channel = "sms" | "notify";
@@ -23,6 +27,10 @@ const EMPTY_FORM = {
   facility: "",
   address: "",
   notes: "",
+  commStackAppId: "",
+  commStackAppName: "",
+  commStackBaseUrl: "",
+  commStackPortalUserId: "",
 };
 
 export function ContactsManager() {
@@ -59,9 +67,24 @@ export function ContactsManager() {
         setError("Enter a valid phone number.");
         return;
       }
-    } else if (!form.notifyClientId.trim()) {
-      setError("Enter a Notify client ID.");
-      return;
+    } else {
+      if (!form.name.trim()) {
+        setError("Name is required for Notify contacts.");
+        return;
+      }
+      if (!form.notifyClientId.trim()) {
+        setError("Enter a Notify client UUID.");
+        return;
+      }
+      if (
+        !form.commStackAppId.trim() ||
+        !form.commStackAppName.trim() ||
+        !form.commStackBaseUrl.trim() ||
+        !form.commStackPortalUserId.trim()
+      ) {
+        setError("All CommStack fields are required for Notify contacts.");
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -74,7 +97,13 @@ export function ContactsManager() {
         body: JSON.stringify({
           ...(form.channel === "sms"
             ? { phone: form.phone.trim() }
-            : { notifyClientId: form.notifyClientId.trim() }),
+            : {
+                notifyClientId: form.notifyClientId.trim(),
+                commStackAppId: form.commStackAppId.trim(),
+                commStackAppName: form.commStackAppName.trim(),
+                commStackBaseUrl: form.commStackBaseUrl.trim(),
+                commStackPortalUserId: form.commStackPortalUserId.trim(),
+              }),
           name: form.name.trim() || undefined,
           facility: form.facility.trim() || undefined,
           address: form.address.trim() || undefined,
@@ -103,7 +132,16 @@ export function ContactsManager() {
   }
 
   const canSave =
-    form.channel === "sms" ? Boolean(form.phone.trim()) : Boolean(form.notifyClientId.trim());
+    form.channel === "sms"
+      ? Boolean(form.phone.trim())
+      : Boolean(
+          form.name.trim() &&
+            form.notifyClientId.trim() &&
+            form.commStackAppId.trim() &&
+            form.commStackAppName.trim() &&
+            form.commStackBaseUrl.trim() &&
+            form.commStackPortalUserId.trim(),
+        );
 
   return (
     <section className="space-y-4">
@@ -149,6 +187,12 @@ export function ContactsManager() {
               </button>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                placeholder={form.channel === "notify" ? "Name (required)" : "Name (optional)"}
+                value={form.name}
+                onChange={(event) => updateField("name", event.target.value)}
+              />
               {form.channel === "sms" ? (
                 <input
                   className="w-full rounded-lg border border-border px-3 py-2 text-sm"
@@ -166,13 +210,7 @@ export function ContactsManager() {
               )}
               <input
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Name (optional)"
-                value={form.name}
-                onChange={(event) => updateField("name", event.target.value)}
-              />
-              <input
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Facility (optional)"
+                placeholder="Facility name (optional)"
                 value={form.facility}
                 onChange={(event) => updateField("facility", event.target.value)}
               />
@@ -183,6 +221,36 @@ export function ContactsManager() {
                 onChange={(event) => updateField("address", event.target.value)}
               />
             </div>
+
+            {form.channel === "notify" ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_APP_ID (required)"
+                  value={form.commStackAppId}
+                  onChange={(event) => updateField("commStackAppId", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_APP_NAME (required)"
+                  value={form.commStackAppName}
+                  onChange={(event) => updateField("commStackAppName", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_BASE_URL (required)"
+                  value={form.commStackBaseUrl}
+                  onChange={(event) => updateField("commStackBaseUrl", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_PORTAL_USER_ID (required)"
+                  value={form.commStackPortalUserId}
+                  onChange={(event) => updateField("commStackPortalUserId", event.target.value)}
+                />
+              </div>
+            ) : null}
+
             <textarea
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               placeholder="Notes (optional)"
@@ -237,6 +305,11 @@ export function ContactsManager() {
             </p>
             <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
             <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
+            {contact.notifyClientId ? (
+              <p className="mt-1 text-xs text-muted">
+                App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
+              </p>
+            ) : null}
             {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
           </div>
         ))}

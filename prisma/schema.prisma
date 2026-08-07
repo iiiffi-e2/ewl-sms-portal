@@ -138,6 +138,11 @@ model Contact {
   notes                    String?
   emergencyContactName     String?
   emergencyContactPhone    String?
+  // Per-community CommStack credentials (required when notifyClientId is set).
+  commStackAppId           String?
+  commStackAppName         String?
+  commStackBaseUrl         String?
+  commStackPortalUserId    String?
   consentStatus            ConsentStatus             @default(none)
   consentUpdatedAt         DateTime?
   createdAt                DateTime                  @default(now())
@@ -151,6 +156,7 @@ model Contact {
   @@index([phone])
   @@index([notifyClientId])
   @@index([facility])
+  @@index([commStackAppId])
 }
 
 model Conversation {

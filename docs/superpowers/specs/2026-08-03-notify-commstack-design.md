@@ -68,16 +68,16 @@ Alert webhook
 
 ## Configuration (SDK 1.2+)
 
-| Env | Purpose |
+| Source | Purpose |
 |---|---|
-| `COMM_STACK_BASE_URL` | Hostname only (e.g. `qsscommbe3.notifync.com`) |
-| `COMM_STACK_ENV` | `dev` or `production` |
-| `COMM_STACK_APP_ID` | Application / tenant id (preferred) |
-| `COMM_STACK_APP_NAME` | Optional: register app by name if app id unknown |
-| `COMM_STACK_PORTAL_USER_ID` | Shared portal sender UUID |
-| `NOTIFY_ALERT_WEBHOOK_SECRET` | Webhook auth (required in production) |
+| Env `COMM_STACK_ENV` | `dev` or `production` (global) |
+| Env `NOTIFY_ALERT_WEBHOOK_SECRET` | Webhook auth (required in production) |
+| Contact `commStackBaseUrl` | Hostname only (e.g. `qsscommbe3.notifync.com`) |
+| Contact `commStackAppId` | Application / tenant id |
+| Contact `commStackAppName` | Application name |
+| Contact `commStackPortalUserId` | Portal sender UUID for that community |
 
-No SDK token is required for v1.2 (token is bundled / env-selected by the SDK). Notify client IDs must be UUIDs. Inbound DMs arrive on the server realtime connection started from `instrumentation.ts`; `directHistory` remains for backfill.
+No SDK token is required for v1.2 (token is bundled / env-selected by the SDK). Notify client IDs must be UUIDs. Inbound DMs arrive on per-community realtime connections started from `instrumentation.ts`; `directHistory` remains for backfill.
 
 Webhook routes:
 
