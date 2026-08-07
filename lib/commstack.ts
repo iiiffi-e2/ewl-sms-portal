@@ -254,6 +254,104 @@ export async function ensurePortalCommStackUser(): Promise<void> {
   });
 }
 
+export async function getCommStackUser(userId: string): Promise<CommStackUser | null> {
+  if (!isCommStackUserId(userId)) {
+    return null;
+  }
+  const comms = await getScopedCommStackClient();
+  try {
+    const user = await comms.users.get(userId.trim());
+    return {
+      userId: user.userId,
+      name: user.name,
+      role: user.role,
+    };
+  } catch (error) {
+    if (error instanceof CommStackError && error.code === "NOT_FOUND") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function diagnoseCommStackDirectThread(input: {
+  otherUserId: string;
+}): Promise<{
+  portalUserId: string;
+  otherUserId: string;
+  portalUser: CommStackUser | null;
+  otherUser: CommStackUser | null;
+  historyCount: number;
+  recentMessages: Array<{
+    messageId: string;
+    direction: "outbound" | "inbound";
+    text: string;
+    sender: string;
+    senderName?: string | null;
+    createdAt?: string | Date | null;
+  }>;
+  notes: string[];
+}> {
+  const portalUserId = getCommStackPortalUserId();
+  const otherUserId = input.otherUserId.trim();
+  const notes: string[] = [];
+
+  await verifyCommStackAccess();
+
+  const portalUser = await getCommStackUser(portalUserId);
+  const otherUser = await getCommStackUser(otherUserId);
+
+  if (!portalUser) {
+    notes.push("Portal user is not registered in CommStack. Sending may still ack but delivery can fail.");
+  }
+  if (!otherUser) {
+    notes.push(
+      "Recipient userId is not registered in this CommStack application. SDK accepts the send, then silently discards it.",
+    );
+  } else {
+    notes.push(
+      "Recipient user record exists in CommStack. CareText also auto-creates that record on send — existence alone does not mean a Notify device is logged in as this UUID.",
+    );
+  }
+
+  let history: CommStackMessage[] = [];
+  try {
+    history = await fetchCommStackDirectHistory({ otherUserId, limit: 10 });
+  } catch (error) {
+    notes.push(
+      `Failed to read directHistory: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const outboundInHistory = history.filter((item) => item.sender === portalUserId).length;
+  if (history.length === 0) {
+    notes.push(
+      "No messages in CommStack directHistory for portal <-> this userId. If CareText shows 'sent', check appId/env mismatch or that you are diagnosing the same contact UUID you messaged.",
+    );
+  } else if (outboundInHistory > 0) {
+    notes.push(
+      `Found ${outboundInHistory} outbound message(s) in CommStack history. Delivery to a handset then depends on that device using this exact userId in this same application.`,
+    );
+  }
+
+  return {
+    portalUserId,
+    otherUserId,
+    portalUser,
+    otherUser,
+    historyCount: history.length,
+    recentMessages: history.map((item) => ({
+      messageId: item.messageId,
+      direction: item.sender === portalUserId ? "outbound" : "inbound",
+      text: item.text,
+      sender: item.sender,
+      senderName: item.senderName,
+      createdAt: item.createdAt,
+    })),
+    notes,
+  };
+}
+
 export async function sendCommStackDirectMessage(input: {
   receiverUserId: string;
   text: string;
