@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { isValidPhoneNumber } from "@/lib/phone";
 
 type Contact = {
@@ -13,6 +14,8 @@ type Contact = {
   facility: string | null;
   address: string | null;
   notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
   commStackAppId: string | null;
   commStackAppName: string | null;
   commStackBaseUrl: string | null;
@@ -47,6 +50,10 @@ export function ContactsManager() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [messagingContactId, setMessagingContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const selectedContact = contacts.find((c) => c.id === selectedContactId) ?? null;
 
   const loadContacts = useCallback(async () => {
     const response = await fetch(`/api/contacts${search ? `?q=${encodeURIComponent(search)}` : ""}`);
@@ -155,8 +162,10 @@ export function ContactsManager() {
       });
 
       if (response.ok) {
+        const data = await response.json().catch(() => null);
         resetForm();
         setIsFormOpen(false);
+        setSuccess(data?.restored ? "Contact restored" : null);
         await loadContacts();
         return;
       }
@@ -172,6 +181,22 @@ export function ContactsManager() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleDeleteSelected() {
+    if (!selectedContactId) return;
+    const response = await fetch(`/api/contacts/${selectedContactId}`, {
+      method: "DELETE",
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(
+        typeof data?.error === "string" ? data.error : "Could not delete contact.",
+      );
+    }
+    setSelectedContactId(null);
+    setSuccess(null);
+    await loadContacts();
   }
 
   const canSave =
@@ -373,44 +398,81 @@ export function ContactsManager() {
         />
       </div>
       {error && !isFormOpen ? <p className="text-sm text-rose-700">{error}</p> : null}
+      {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
 
-      <div className="space-y-2 rounded-xl border border-border bg-white p-4">
-        {contacts.map((contact) => (
-          <div
-            key={contact.id}
-            className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-start sm:justify-between"
-          >
-            <div className="min-w-0">
-              <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
-              <p className="text-sm text-muted">
-                {contact.phone
-                  ? contact.phone
-                  : contact.notifyChannelId
-                    ? `Notify channel: ${contact.notifyChannelId}`
-                    : contact.notifyClientId
-                      ? `Notify: ${contact.notifyClientId}`
-                      : "No identity"}
-              </p>
-              <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
-              <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
-              {contact.notifyClientId || contact.notifyChannelId ? (
-                <p className="mt-1 text-xs text-muted">
-                  App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
-                </p>
-              ) : null}
-              {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
-            </div>
-            <button
-              type="button"
-              disabled={messagingContactId === contact.id}
-              className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              onClick={() => void handleSendMessage(contact.id)}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-2 rounded-xl border border-border bg-white p-4">
+          {contacts.map((contact) => (
+            <div
+              key={contact.id}
+              className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-start sm:justify-between"
             >
-              {messagingContactId === contact.id ? "Opening..." : "Send Message"}
-            </button>
+              <div className="min-w-0">
+                <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
+                <p className="text-sm text-muted">
+                  {contact.phone
+                    ? contact.phone
+                    : contact.notifyChannelId
+                      ? `Notify channel: ${contact.notifyChannelId}`
+                      : contact.notifyClientId
+                        ? `Notify: ${contact.notifyClientId}`
+                        : "No identity"}
+                </p>
+                <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
+                <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
+                {contact.notifyClientId || contact.notifyChannelId ? (
+                  <p className="mt-1 text-xs text-muted">
+                    App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
+                  </p>
+                ) : null}
+                {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                <button
+                  type="button"
+                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
+                  onClick={() => {
+                    setSelectedContactId(contact.id);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  disabled={messagingContactId === contact.id}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  onClick={() => void handleSendMessage(contact.id)}
+                >
+                  {messagingContactId === contact.id ? "Opening..." : "Send Message"}
+                </button>
+              </div>
+            </div>
+          ))}
+          {!contacts.length ? <p className="text-sm text-muted">No contacts found.</p> : null}
+        </div>
+
+        {selectedContact ? (
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                className="text-sm font-medium text-muted underline-offset-2 hover:underline"
+                onClick={() => setSelectedContactId(null)}
+              >
+                Close
+              </button>
+            </div>
+            <ContactDetailsCard
+              contact={selectedContact}
+              onUpdated={async () => {
+                await loadContacts();
+              }}
+              onDelete={handleDeleteSelected}
+            />
           </div>
-        ))}
-        {!contacts.length ? <p className="text-sm text-muted">No contacts found.</p> : null}
+        ) : null}
       </div>
     </section>
   );
