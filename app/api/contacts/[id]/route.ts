@@ -77,7 +77,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const existing = await prisma.contact.findUnique({ where: { id } });
-  if (!existing) {
+  if (!existing || isSoftDeleted(existing)) {
     return NextResponse.json({ error: "Contact not found." }, { status: 404 });
   }
 

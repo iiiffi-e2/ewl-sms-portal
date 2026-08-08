@@ -14,7 +14,10 @@ import {
   contactHasActiveConversation,
   findContactByIdentity,
 } from "@/lib/contact-reuse";
-import { ACTIVE_CONTACT_WHERE } from "@/lib/contact-soft-delete";
+import {
+  ACTIVE_CONTACT_WHERE,
+  decideContactIdentityCreateAction,
+} from "@/lib/contact-soft-delete";
 import { createContactSchema } from "@/lib/validators";
 import { requireSession } from "@/lib/api-auth";
 
@@ -140,7 +143,12 @@ export async function POST(request: Request) {
 
   const existing = await findContactByIdentity({ phone, notifyClientId, notifyChannelId });
   if (existing) {
-    if (contactHasActiveConversation(existing)) {
+    const action = decideContactIdentityCreateAction({
+      deletedAt: existing.deletedAt,
+      hasActiveConversation: contactHasActiveConversation(existing),
+    });
+
+    if (action === "conflict") {
       return NextResponse.json(
         {
           error: notifyChannelId
@@ -155,10 +163,19 @@ export async function POST(request: Request) {
 
     const contact = await prisma.contact.update({
       where: { id: existing.id },
-      data: contactData,
+      data: {
+        ...contactData,
+        deletedAt: null,
+      },
     });
     await provisionNotifyUser(contact);
-    return NextResponse.json({ contact, reused: true }, { status: 200 });
+    return NextResponse.json(
+      {
+        contact,
+        ...(action === "restore" ? { restored: true } : { reused: true }),
+      },
+      { status: 200 },
+    );
   }
 
   try {
