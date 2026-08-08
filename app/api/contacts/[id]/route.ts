@@ -9,6 +9,7 @@ import {
   normalizeCommStackBaseUrl,
 } from "@/lib/commstack";
 import { assertContactIdentityXor } from "@/lib/contact-identity";
+import { isSoftDeleted } from "@/lib/contact-soft-delete";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { updateContactSchema } from "@/lib/validators";
@@ -37,6 +38,29 @@ function assertNotifyContactComplete(contact: {
       "Notify contacts require COMM_STACK_APP_ID, COMM_STACK_APP_NAME, COMM_STACK_BASE_URL, and COMM_STACK_PORTAL_USER_ID.",
     );
   }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const authResult = await requireSession();
+  if ("error" in authResult) {
+    return authResult.error;
+  }
+
+  const { id } = await params;
+  const existing = await prisma.contact.findUnique({ where: { id } });
+  if (!existing || isSoftDeleted(existing)) {
+    return NextResponse.json({ error: "Contact not found." }, { status: 404 });
+  }
+
+  const contact = await prisma.contact.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+
+  return NextResponse.json({ contact });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

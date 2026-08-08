@@ -14,6 +14,7 @@ import {
   contactHasActiveConversation,
   findContactByIdentity,
 } from "@/lib/contact-reuse";
+import { ACTIVE_CONTACT_WHERE } from "@/lib/contact-soft-delete";
 import { createContactSchema } from "@/lib/validators";
 import { requireSession } from "@/lib/api-auth";
 
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
 
   const contacts = await prisma.contact.findMany({
     where: {
+      ...ACTIVE_CONTACT_WHERE,
       ...(smsOnly ? { phone: { not: null } } : {}),
       ...(q
         ? {
