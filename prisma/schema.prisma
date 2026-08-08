@@ -148,6 +148,7 @@ model Contact {
   consentUpdatedAt         DateTime?
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
+  deletedAt                DateTime?
   conversations            Conversation[]
   conversationParticipants ConversationParticipant[]
   consentEvents            ConsentEvent[]
@@ -159,6 +160,7 @@ model Contact {
   @@index([notifyChannelId])
   @@index([facility])
   @@index([commStackAppId])
+  @@index([deletedAt])
 }
 
 model Conversation {
