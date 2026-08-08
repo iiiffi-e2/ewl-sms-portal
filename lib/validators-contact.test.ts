@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { createContactSchema, sendMessageSchema } from "@/lib/validators";
 
-const notifyConfig = {
+const notifyIndividual = {
   notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
   name: "Ada",
+  commStackAppId: "a7853715-005b-4eeb-ac8e-707f002ab943",
+  commStackAppName: "ewl-caretext-dev",
+  commStackBaseUrl: "qsscommbe3.notifync.com",
+  commStackPortalUserId: "9e8755cf-5ac7-11f1-854c-5a0d702bfea6",
+};
+
+const notifyChannel = {
+  notifyChannelId: "660e8400-e29b-41d4-a716-446655440000",
+  name: "Ward A Channel",
   commStackAppId: "a7853715-005b-4eeb-ac8e-707f002ab943",
   commStackAppName: "ewl-caretext-dev",
   commStackBaseUrl: "qsscommbe3.notifync.com",
@@ -16,8 +25,13 @@ describe("createContactSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts Notify contacts with UUID and CommStack config", () => {
-    const parsed = createContactSchema.safeParse(notifyConfig);
+  it("accepts Notify individual contacts with UUID and CommStack config", () => {
+    const parsed = createContactSchema.safeParse(notifyIndividual);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts Notify channel contacts with channel UUID and CommStack config", () => {
+    const parsed = createContactSchema.safeParse(notifyChannel);
     expect(parsed.success).toBe(true);
   });
 
@@ -29,9 +43,17 @@ describe("createContactSchema", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("rejects both notifyClientId and notifyChannelId", () => {
+    const parsed = createContactSchema.safeParse({
+      ...notifyIndividual,
+      notifyChannelId: notifyChannel.notifyChannelId,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
   it("rejects Notify contacts missing name", () => {
     const parsed = createContactSchema.safeParse({
-      ...notifyConfig,
+      ...notifyIndividual,
       name: undefined,
     });
     expect(parsed.success).toBe(false);
@@ -41,14 +63,14 @@ describe("createContactSchema", () => {
     const parsed = createContactSchema.safeParse({
       phone: "+15551234567",
       name: "Ada",
-      commStackAppId: notifyConfig.commStackAppId,
+      commStackAppId: notifyIndividual.commStackAppId,
     });
     expect(parsed.success).toBe(false);
   });
 
   it("rejects non-UUID notifyClientId", () => {
     const parsed = createContactSchema.safeParse({
-      ...notifyConfig,
+      ...notifyIndividual,
       notifyClientId: "client-1",
     });
     expect(parsed.success).toBe(false);
@@ -57,7 +79,7 @@ describe("createContactSchema", () => {
   it("rejects both phone and notifyClientId", () => {
     const parsed = createContactSchema.safeParse({
       phone: "+15551234567",
-      ...notifyConfig,
+      ...notifyIndividual,
     });
     expect(parsed.success).toBe(false);
   });
@@ -80,6 +102,14 @@ describe("sendMessageSchema", () => {
   it("allows UUID notifyClientId without phone", () => {
     const parsed = sendMessageSchema.safeParse({
       notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
+      body: "Hello",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("allows UUID notifyChannelId without phone", () => {
+    const parsed = sendMessageSchema.safeParse({
+      notifyChannelId: "660e8400-e29b-41d4-a716-446655440000",
       body: "Hello",
     });
     expect(parsed.success).toBe(true);

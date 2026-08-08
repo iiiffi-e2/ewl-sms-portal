@@ -49,6 +49,7 @@ type ConversationListResponse = {
       name: string | null;
       phone: string | null;
       notifyClientId: string | null;
+      notifyChannelId: string | null;
       facility: string | null;
       address: string | null;
       notes: string | null;
@@ -173,8 +174,14 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   }, [conversationId]);
 
   useEffect(() => {
-    openNotifyConversationRef.current = Boolean(activeConversation?.contact?.notifyClientId);
-  }, [activeConversation?.contact?.notifyClientId]);
+    openNotifyConversationRef.current = Boolean(
+      activeConversation?.contact?.notifyClientId ||
+        activeConversation?.contact?.notifyChannelId,
+    );
+  }, [
+    activeConversation?.contact?.notifyClientId,
+    activeConversation?.contact?.notifyChannelId,
+  ]);
 
   useEffect(() => {
     void loadTemplates();
@@ -217,7 +224,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       // the conversations list preview. Keep syncing the open Notify thread each
       // poll so replies appear without a manual refresh.
       const isNotifyConversation =
-        Boolean(listConversation?.contact?.notifyClientId) || openNotifyConversationRef.current;
+        Boolean(
+          listConversation?.contact?.notifyClientId ||
+            listConversation?.contact?.notifyChannelId,
+        ) || openNotifyConversationRef.current;
 
       if (hasNewMessage || safetyElapsed || isNotifyConversation) {
         detailLastFetchAtRef.current = Date.now();
@@ -275,7 +285,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           ...message,
           contactName: conversation.contact?.name ?? conversation.title ?? null,
           phone:
-            conversation.contact?.phone ?? conversation.contact?.notifyClientId ?? "",
+            conversation.contact?.phone ??
+              conversation.contact?.notifyClientId ??
+              conversation.contact?.notifyChannelId ??
+              "",
         })),
     );
 
@@ -321,7 +334,11 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     () => activeConversation?.contact?.phone ?? draftPhone,
     [activeConversation, draftPhone],
   );
-  const contactTransport = activeConversation?.contact?.notifyClientId ? "notify" : "sms";
+  const contactTransport =
+    activeConversation?.contact?.notifyClientId ||
+    activeConversation?.contact?.notifyChannelId
+      ? "notify"
+      : "sms";
   const showConversationPane = isNewConversation || Boolean(conversationId);
   const isDraftConversation = isNewConversation && !activeConversation;
   const isAdmin = session?.user.role === "admin";
@@ -332,6 +349,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       name: string;
       phone?: string;
       notifyClientId?: string;
+      notifyChannelId?: string;
       facility: string;
       address: string;
       commStackAppId?: string;
@@ -344,15 +362,23 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: payload.name.trim() ? payload.name.trim() : null,
-          ...(payload.notifyClientId?.trim()
+          ...(payload.notifyChannelId?.trim()
             ? {
-                notifyClientId: payload.notifyClientId.trim(),
+                notifyChannelId: payload.notifyChannelId.trim(),
                 commStackAppId: payload.commStackAppId?.trim(),
                 commStackAppName: payload.commStackAppName?.trim(),
                 commStackBaseUrl: payload.commStackBaseUrl?.trim(),
                 commStackPortalUserId: payload.commStackPortalUserId?.trim(),
               }
-            : { phone: payload.phone?.trim() }),
+            : payload.notifyClientId?.trim()
+              ? {
+                  notifyClientId: payload.notifyClientId.trim(),
+                  commStackAppId: payload.commStackAppId?.trim(),
+                  commStackAppName: payload.commStackAppName?.trim(),
+                  commStackBaseUrl: payload.commStackBaseUrl?.trim(),
+                  commStackPortalUserId: payload.commStackPortalUserId?.trim(),
+                }
+              : { phone: payload.phone?.trim() }),
           facility: payload.facility.trim() ? payload.facility.trim() : null,
           address: payload.address.trim() ? payload.address.trim() : null,
         }),
@@ -463,15 +489,18 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       let response: Response;
       try {
         const notifyClientId = activeConversation?.contact?.notifyClientId;
+        const notifyChannelId = activeConversation?.contact?.notifyChannelId;
         response = await fetch("/api/messages/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             body,
             conversationId: targetConversationId,
-            ...(notifyClientId
-              ? { notifyClientId }
-              : { phone: targetConversationId ? defaultPhone : phone }),
+            ...(notifyChannelId
+              ? { notifyChannelId }
+              : notifyClientId
+                ? { notifyClientId }
+                : { phone: targetConversationId ? defaultPhone : phone }),
           }),
         });
       } catch (error) {
@@ -623,6 +652,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   contactName={activeConversation?.contact?.name}
                   phone={activeConversation?.contact?.phone}
                   notifyClientId={activeConversation?.contact?.notifyClientId}
+                  notifyChannelId={activeConversation?.contact?.notifyChannelId}
                   facility={activeConversation?.contact?.facility}
                   status={activeConversation?.status}
                   isDraft={isDraftConversation}
@@ -718,6 +748,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 />
                 {activeConversation?.contact?.phone ? (
                   <p className="mt-2 text-sm text-muted">{activeConversation.contact.phone}</p>
+                ) : activeConversation?.contact?.notifyChannelId ? (
+                  <p className="mt-2 text-sm text-muted">
+                    Notify channel: {activeConversation.contact.notifyChannelId}
+                  </p>
                 ) : activeConversation?.contact?.notifyClientId ? (
                   <p className="mt-2 text-sm text-muted">
                     Notify: {activeConversation.contact.notifyClientId}
@@ -798,6 +832,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 contactName={activeConversation?.contact?.name}
                 phone={activeConversation?.contact?.phone}
                 notifyClientId={activeConversation?.contact?.notifyClientId}
+                notifyChannelId={activeConversation?.contact?.notifyChannelId}
                 facility={activeConversation?.contact?.facility}
                 status={activeConversation?.status}
                 isDraft={isDraftConversation}

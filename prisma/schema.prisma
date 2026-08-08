@@ -130,15 +130,16 @@ model PasswordResetToken {
 model Contact {
   id                       String                    @id @default(uuid())
   name                     String?
-  // Exactly one of phone / notifyClientId must be set (enforced in app + DB check).
+  // Exactly one of phone / notifyClientId / notifyChannelId (enforced in app + DB check).
   phone                    String?                   @unique
   notifyClientId           String?                   @unique
+  notifyChannelId          String?                   @unique
   facility                 String?
   address                  String?
   notes                    String?
   emergencyContactName     String?
   emergencyContactPhone    String?
-  // Per-community CommStack credentials (required when notifyClientId is set).
+  // Per-community CommStack credentials (required for Notify individual or channel).
   commStackAppId           String?
   commStackAppName         String?
   commStackBaseUrl         String?
@@ -155,6 +156,7 @@ model Contact {
   @@index([name])
   @@index([phone])
   @@index([notifyClientId])
+  @@index([notifyChannelId])
   @@index([facility])
   @@index([commStackAppId])
 }

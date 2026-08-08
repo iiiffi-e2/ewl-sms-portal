@@ -70,6 +70,7 @@ export async function GET(request: Request) {
               { name: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
               { notifyClientId: { contains: q, mode: "insensitive" } },
+              { notifyChannelId: { contains: q, mode: "insensitive" } },
               { facility: { contains: q, mode: "insensitive" } },
             ],
           }
@@ -95,11 +96,13 @@ export async function POST(request: Request) {
 
   let phone: string | null = null;
   let notifyClientId: string | null = null;
+  let notifyChannelId: string | null = null;
   let emergencyContactPhone: string | null;
   try {
     phone = parsed.data.phone?.trim() ? normalizePhoneNumber(parsed.data.phone) : null;
     notifyClientId = parsed.data.notifyClientId?.trim() || null;
-    assertContactIdentityXor({ phone, notifyClientId });
+    notifyChannelId = parsed.data.notifyChannelId?.trim() || null;
+    assertContactIdentityXor({ phone, notifyClientId, notifyChannelId });
     emergencyContactPhone = parsed.data.emergencyContactPhone
       ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
       : null;
@@ -110,11 +113,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const isNotify = Boolean(notifyClientId);
+  const isNotify = Boolean(notifyClientId || notifyChannelId);
   const contactData = {
     name: parsed.data.name ?? null,
     phone,
     notifyClientId,
+    notifyChannelId,
     facility: parsed.data.facility ?? null,
     address: parsed.data.address ?? null,
     notes: parsed.data.notes ?? null,
@@ -132,20 +136,21 @@ export async function POST(request: Request) {
       : null,
   };
 
-  const existing = await findContactByIdentity({ phone, notifyClientId });
+  const existing = await findContactByIdentity({ phone, notifyClientId, notifyChannelId });
   if (existing) {
     if (contactHasActiveConversation(existing)) {
       return NextResponse.json(
         {
-          error: notifyClientId
-            ? "An active conversation already exists for this Notify client ID."
-            : "An active conversation already exists for this phone number.",
+          error: notifyChannelId
+            ? "An active conversation already exists for this Notify channel ID."
+            : notifyClientId
+              ? "An active conversation already exists for this Notify client ID."
+              : "An active conversation already exists for this phone number.",
         },
         { status: 409 },
       );
     }
 
-    // Soft-deleted/archived threads leave the Contact row; reuse it so the ID can be re-added.
     const contact = await prisma.contact.update({
       where: { id: existing.id },
       data: contactData,
@@ -166,9 +171,11 @@ export async function POST(request: Request) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
         {
-          error: notifyClientId
-            ? "A contact with this Notify client ID already exists."
-            : "A contact with this phone number already exists.",
+          error: notifyChannelId
+            ? "A contact with this Notify channel ID already exists."
+            : notifyClientId
+              ? "A contact with this Notify client ID already exists."
+              : "A contact with this phone number already exists.",
         },
         { status: 409 },
       );

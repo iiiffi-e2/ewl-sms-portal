@@ -36,13 +36,14 @@ export async function GET() {
 
   const notifyContacts = await prisma.contact.findMany({
     where: {
-      notifyClientId: { not: null },
+      OR: [{ notifyClientId: { not: null } }, { notifyChannelId: { not: null } }],
       commStackAppId: { not: null },
     },
     select: {
       id: true,
       name: true,
       notifyClientId: true,
+      notifyChannelId: true,
       commStackAppId: true,
       commStackAppName: true,
       commStackBaseUrl: true,

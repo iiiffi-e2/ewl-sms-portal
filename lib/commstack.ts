@@ -387,6 +387,35 @@ export async function sendCommStackDirectMessage(
   return { messageId: String(ack.ackId) };
 }
 
+export async function sendCommStackChannelMessage(
+  config: ContactCommStackConfig,
+  input: {
+    channelId: string;
+    text: string;
+    senderName?: string | null;
+  },
+): Promise<{ messageId: string }> {
+  if (!isCommStackUserId(input.channelId)) {
+    throw new CommStackError(
+      "INVALID_REQUEST",
+      "Notify channel ID must be a valid UUID.",
+      { fields: ["channelId"] },
+    );
+  }
+
+  const comms = await getScopedCommStackClient(config);
+  await ensurePortalCommStackUser(config);
+
+  const ack = await comms.messages.sendToChannel({
+    channelId: input.channelId.trim(),
+    sender: config.portalUserId,
+    senderName: input.senderName ?? "EyeWatch LIVE®",
+    text: input.text,
+  });
+
+  return { messageId: String(ack.ackId) };
+}
+
 export async function fetchCommStackDirectHistory(
   config: ContactCommStackConfig,
   input: {
@@ -399,6 +428,35 @@ export async function fetchCommStackDirectHistory(
   const page = await comms.messages.directHistory({
     userId: config.portalUserId,
     otherUserId: input.otherUserId.trim(),
+    limit: input.limit ?? 50,
+    offset: 0,
+  });
+
+  return page.items.map((item) => ({
+    messageId: String(item.messageId),
+    type: item.type,
+    text: item.text,
+    sender: item.sender,
+    senderName: item.senderName,
+    receiver: item.receiver,
+    channelId: item.channelId,
+    createdAt: item.createdAt,
+    readAt: item.readAt,
+  }));
+}
+
+export async function fetchCommStackChannelHistory(
+  config: ContactCommStackConfig,
+  input: {
+    channelId: string;
+    limit?: number;
+  },
+): Promise<CommStackMessage[]> {
+  const comms = await getScopedCommStackClient(config);
+
+  const page = await comms.messages.channelHistory({
+    channelId: input.channelId.trim(),
+    userId: config.portalUserId,
     limit: input.limit ?? 50,
     offset: 0,
   });

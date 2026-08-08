@@ -58,11 +58,13 @@ export async function GET(request: Request) {
                   { contact: { name: { contains: query, mode: "insensitive" } } },
                   { contact: { phone: { contains: query, mode: "insensitive" } } },
                   { contact: { notifyClientId: { contains: query, mode: "insensitive" } } },
+                  { contact: { notifyChannelId: { contains: query, mode: "insensitive" } } },
                   { contact: { facility: { contains: query, mode: "insensitive" } } },
                   { title: { contains: query, mode: "insensitive" } },
                   { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
                   { participants: { some: { contact: { phone: { contains: query } } } } },
                   { participants: { some: { contact: { notifyClientId: { contains: query } } } } },
+                  { participants: { some: { contact: { notifyChannelId: { contains: query } } } } },
                   ...(shouldSearchMessageBodies(query)
                     ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
                     : []),
@@ -149,11 +151,13 @@ export async function POST(request: Request) {
 
   let phone: string | null = null;
   let notifyClientId: string | null = null;
+  let notifyChannelId: string | null = null;
   let normalizedEmergencyPhone: string | null = null;
   try {
     phone = parsed.data.phone?.trim() ? normalizePhoneNumber(parsed.data.phone) : null;
     notifyClientId = parsed.data.notifyClientId?.trim() || null;
-    assertContactIdentityXor({ phone, notifyClientId });
+    notifyChannelId = parsed.data.notifyChannelId?.trim() || null;
+    assertContactIdentityXor({ phone, notifyClientId, notifyChannelId });
     normalizedEmergencyPhone = parsed.data.emergencyContactPhone
       ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
       : null;
@@ -164,7 +168,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const isNotify = Boolean(notifyClientId);
+  const isNotify = Boolean(notifyClientId || notifyChannelId);
   const commStackAppId = isNotify ? normalizeOptional(parsed.data.commStackAppId) : null;
   const commStackAppName = isNotify ? normalizeOptional(parsed.data.commStackAppName) : null;
   const commStackBaseUrl = isNotify
@@ -175,6 +179,19 @@ export async function POST(request: Request) {
   const commStackPortalUserId = isNotify
     ? normalizeOptional(parsed.data.commStackPortalUserId)
     : null;
+
+  const notifyUpdate = {
+    name: parsed.data.name ?? undefined,
+    facility: parsed.data.facility ?? undefined,
+    address: parsed.data.address ?? undefined,
+    notes: parsed.data.notes ?? undefined,
+    emergencyContactName: parsed.data.emergencyContactName ?? undefined,
+    emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+    commStackAppId: commStackAppId ?? undefined,
+    commStackAppName: commStackAppName ?? undefined,
+    commStackBaseUrl: commStackBaseUrl ?? undefined,
+    commStackPortalUserId: commStackPortalUserId ?? undefined,
+  };
 
   const contact = phone
     ? await prisma.contact.upsert({
@@ -190,6 +207,8 @@ export async function POST(request: Request) {
           commStackAppName: null,
           commStackBaseUrl: null,
           commStackPortalUserId: null,
+          notifyClientId: null,
+          notifyChannelId: null,
         },
         create: {
           phone,
@@ -201,34 +220,47 @@ export async function POST(request: Request) {
           emergencyContactPhone: normalizedEmergencyPhone,
         },
       })
-    : await prisma.contact.upsert({
-        where: { notifyClientId: notifyClientId! },
-        update: {
-          name: parsed.data.name ?? undefined,
-          facility: parsed.data.facility ?? undefined,
-          address: parsed.data.address ?? undefined,
-          notes: parsed.data.notes ?? undefined,
-          emergencyContactName: parsed.data.emergencyContactName ?? undefined,
-          emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
-          commStackAppId: commStackAppId ?? undefined,
-          commStackAppName: commStackAppName ?? undefined,
-          commStackBaseUrl: commStackBaseUrl ?? undefined,
-          commStackPortalUserId: commStackPortalUserId ?? undefined,
-        },
-        create: {
-          notifyClientId: notifyClientId!,
-          name: parsed.data.name ?? null,
-          facility: parsed.data.facility ?? null,
-          address: parsed.data.address ?? null,
-          notes: parsed.data.notes ?? null,
-          emergencyContactName: parsed.data.emergencyContactName ?? null,
-          emergencyContactPhone: normalizedEmergencyPhone,
-          commStackAppId,
-          commStackAppName,
-          commStackBaseUrl,
-          commStackPortalUserId,
-        },
-      });
+    : notifyChannelId
+      ? await prisma.contact.upsert({
+          where: { notifyChannelId },
+          update: {
+            ...notifyUpdate,
+            notifyClientId: null,
+          },
+          create: {
+            notifyChannelId,
+            name: parsed.data.name ?? null,
+            facility: parsed.data.facility ?? null,
+            address: parsed.data.address ?? null,
+            notes: parsed.data.notes ?? null,
+            emergencyContactName: parsed.data.emergencyContactName ?? null,
+            emergencyContactPhone: normalizedEmergencyPhone,
+            commStackAppId,
+            commStackAppName,
+            commStackBaseUrl,
+            commStackPortalUserId,
+          },
+        })
+      : await prisma.contact.upsert({
+          where: { notifyClientId: notifyClientId! },
+          update: {
+            ...notifyUpdate,
+            notifyChannelId: null,
+          },
+          create: {
+            notifyClientId: notifyClientId!,
+            name: parsed.data.name ?? null,
+            facility: parsed.data.facility ?? null,
+            address: parsed.data.address ?? null,
+            notes: parsed.data.notes ?? null,
+            emergencyContactName: parsed.data.emergencyContactName ?? null,
+            emergencyContactPhone: normalizedEmergencyPhone,
+            commStackAppId,
+            commStackAppName,
+            commStackBaseUrl,
+            commStackPortalUserId,
+          },
+        });
 
   if (
     contact.notifyClientId &&

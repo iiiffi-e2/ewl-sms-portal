@@ -7,6 +7,7 @@ type Contact = {
   name: string | null;
   phone: string | null;
   notifyClientId: string | null;
+  notifyChannelId: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
@@ -21,8 +22,10 @@ type Contact = {
 type ContactFormState = {
   name: string;
   channel: "sms" | "notify";
+  notifyKind: "individual" | "channel";
   phone: string;
   notifyClientId: string;
+  notifyChannelId: string;
   facility: string;
   address: string;
   commStackAppId: string;
@@ -33,7 +36,8 @@ type ContactFormState = {
 
 type NotifyCreatePayload = {
   name: string;
-  notifyClientId: string;
+  notifyClientId?: string;
+  notifyChannelId?: string;
   facility: string;
   address: string;
   commStackAppId: string;
@@ -59,11 +63,14 @@ type ContactDetailsCardProps = {
 };
 
 function formFromContact(contact: Contact): ContactFormState {
+  const isNotify = Boolean(contact.notifyClientId || contact.notifyChannelId);
   return {
     name: contact.name ?? "",
-    channel: contact.notifyClientId ? "notify" : "sms",
+    channel: isNotify ? "notify" : "sms",
+    notifyKind: contact.notifyChannelId ? "channel" : "individual",
     phone: contact.phone ?? "",
     notifyClientId: contact.notifyClientId ?? "",
+    notifyChannelId: contact.notifyChannelId ?? "",
     facility: contact.facility ?? "",
     address: contact.address ?? "",
     commStackAppId: contact.commStackAppId ?? "",
@@ -84,8 +91,10 @@ export function ContactDetailsCard({
   const [form, setForm] = useState<ContactFormState>({
     name: "",
     channel: "sms",
+    notifyKind: "individual",
     phone: draftPhone,
     notifyClientId: "",
+    notifyChannelId: "",
     facility: "",
     address: "",
     commStackAppId: "",
@@ -153,7 +162,9 @@ export function ContactDetailsCard({
         } else {
           await onCreate({
             name: form.name,
-            notifyClientId: form.notifyClientId.trim(),
+            ...(form.notifyKind === "individual"
+              ? { notifyClientId: form.notifyClientId.trim() }
+              : { notifyChannelId: form.notifyChannelId.trim() }),
             facility: form.facility,
             address: form.address,
             commStackAppId: form.commStackAppId.trim(),
@@ -181,14 +192,18 @@ export function ContactDetailsCard({
             ? {
                 phone: form.phone.trim(),
                 notifyClientId: null,
+                notifyChannelId: null,
                 commStackAppId: null,
                 commStackAppName: null,
                 commStackBaseUrl: null,
                 commStackPortalUserId: null,
               }
             : {
-                notifyClientId: form.notifyClientId.trim(),
                 phone: null,
+                notifyClientId:
+                  form.notifyKind === "individual" ? form.notifyClientId.trim() : null,
+                notifyChannelId:
+                  form.notifyKind === "channel" ? form.notifyChannelId.trim() : null,
                 commStackAppId: form.commStackAppId.trim(),
                 commStackAppName: form.commStackAppName.trim(),
                 commStackBaseUrl: form.commStackBaseUrl.trim(),
@@ -288,7 +303,7 @@ export function ContactDetailsCard({
           />
         </label>
         {isDraftMode || (isEditing && !identityLocked) ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               disabled={!isEditing}
@@ -316,9 +331,42 @@ export function ContactDetailsCard({
           </div>
         ) : (
           <p className="text-xs text-muted">
-            Channel: {contact?.notifyClientId ? "Notify" : "SMS"}
+            Channel:{" "}
+            {contact?.notifyChannelId
+              ? "Notify channel"
+              : contact?.notifyClientId
+                ? "Notify individual"
+                : "SMS"}
           </p>
         )}
+        {form.channel === "notify" && (isDraftMode || (isEditing && !identityLocked)) ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={!isEditing}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                form.notifyKind === "individual"
+                  ? "bg-slate-800 text-white"
+                  : "border border-border bg-white text-slate-700"
+              }`}
+              onClick={() => updateForm({ notifyKind: "individual" })}
+            >
+              Individual
+            </button>
+            <button
+              type="button"
+              disabled={!isEditing}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                form.notifyKind === "channel"
+                  ? "bg-slate-800 text-white"
+                  : "border border-border bg-white text-slate-700"
+              }`}
+              onClick={() => updateForm({ notifyKind: "channel" })}
+            >
+              Channel
+            </button>
+          </div>
+        ) : null}
         {form.channel === "sms" ? (
           <label className="block">
             <span className="text-xs font-medium text-muted">Phone number</span>
@@ -333,17 +381,31 @@ export function ContactDetailsCard({
           </label>
         ) : (
           <>
-            <label className="block">
-              <span className="text-xs font-medium text-muted">Notify client UUID</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                value={form.notifyClientId}
-                onChange={(event) => updateForm({ notifyClientId: event.target.value })}
-                placeholder="Notify client UUID"
-                required
-                readOnly={!isEditing}
-              />
-            </label>
+            {form.notifyKind === "individual" ? (
+              <label className="block">
+                <span className="text-xs font-medium text-muted">Notify client UUID</span>
+                <input
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                  value={form.notifyClientId}
+                  onChange={(event) => updateForm({ notifyClientId: event.target.value })}
+                  placeholder="Notify client UUID"
+                  required
+                  readOnly={!isEditing}
+                />
+              </label>
+            ) : (
+              <label className="block">
+                <span className="text-xs font-medium text-muted">Notify channel UUID</span>
+                <input
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                  value={form.notifyChannelId}
+                  onChange={(event) => updateForm({ notifyChannelId: event.target.value })}
+                  placeholder="Notify channel UUID"
+                  required
+                  readOnly={!isEditing}
+                />
+              </label>
+            )}
             <label className="block">
               <span className="text-xs font-medium text-muted">COMM_STACK_APP_ID</span>
               <input

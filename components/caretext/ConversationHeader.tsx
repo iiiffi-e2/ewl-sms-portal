@@ -19,6 +19,7 @@ type ConversationHeaderProps = {
   contactName?: string | null;
   phone?: string | null;
   notifyClientId?: string | null;
+  notifyChannelId?: string | null;
   facility?: string | null;
   status?: string;
   isDraft?: boolean;
@@ -36,6 +37,7 @@ export function ConversationHeader({
   contactName,
   phone,
   notifyClientId,
+  notifyChannelId,
   facility,
   status,
   isDraft,
@@ -51,8 +53,14 @@ export function ConversationHeader({
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const isStartingCall = callPhase === "connecting";
-  const identityLabel = phone || (notifyClientId ? `Notify: ${notifyClientId}` : "");
-  const canCall = Boolean(phone) && !notifyClientId;
+  const identityLabel =
+    phone ||
+    (notifyChannelId
+      ? `Notify channel: ${notifyChannelId}`
+      : notifyClientId
+        ? `Notify: ${notifyClientId}`
+        : "");
+  const canCall = Boolean(phone) && !notifyClientId && !notifyChannelId;
 
   const deleteLabel = isGroup ? title || "this group" : contactName || identityLabel || "";
   const callButtonClassName =

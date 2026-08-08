@@ -9,6 +9,7 @@ type Contact = {
   name: string | null;
   phone: string | null;
   notifyClientId: string | null;
+  notifyChannelId: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
@@ -19,11 +20,14 @@ type Contact = {
 };
 
 type Channel = "sms" | "notify";
+type NotifyKind = "individual" | "channel";
 
 const EMPTY_FORM = {
   channel: "sms" as Channel,
+  notifyKind: "individual" as NotifyKind,
   phone: "",
   notifyClientId: "",
+  notifyChannelId: "",
   name: "",
   facility: "",
   address: "",
@@ -105,8 +109,12 @@ export function ContactsManager() {
         setError("Name is required for Notify contacts.");
         return;
       }
-      if (!form.notifyClientId.trim()) {
+      if (form.notifyKind === "individual" && !form.notifyClientId.trim()) {
         setError("Enter a Notify client UUID.");
+        return;
+      }
+      if (form.notifyKind === "channel" && !form.notifyChannelId.trim()) {
+        setError("Enter a Notify channel UUID.");
         return;
       }
       if (
@@ -131,7 +139,9 @@ export function ContactsManager() {
           ...(form.channel === "sms"
             ? { phone: form.phone.trim() }
             : {
-                notifyClientId: form.notifyClientId.trim(),
+                ...(form.notifyKind === "individual"
+                  ? { notifyClientId: form.notifyClientId.trim() }
+                  : { notifyChannelId: form.notifyChannelId.trim() }),
                 commStackAppId: form.commStackAppId.trim(),
                 commStackAppName: form.commStackAppName.trim(),
                 commStackBaseUrl: form.commStackBaseUrl.trim(),
@@ -169,7 +179,9 @@ export function ContactsManager() {
       ? Boolean(form.phone.trim())
       : Boolean(
           form.name.trim() &&
-            form.notifyClientId.trim() &&
+            (form.notifyKind === "individual"
+              ? form.notifyClientId.trim()
+              : form.notifyChannelId.trim()) &&
             form.commStackAppId.trim() &&
             form.commStackAppName.trim() &&
             form.commStackBaseUrl.trim() &&
@@ -216,9 +228,37 @@ export function ContactsManager() {
                 }`}
                 onClick={() => updateField("channel", "notify")}
               >
-                Notify client
+                Notify
               </button>
             </div>
+
+            {form.channel === "notify" ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    form.notifyKind === "individual"
+                      ? "bg-slate-800 text-white"
+                      : "border border-border bg-white text-slate-700"
+                  }`}
+                  onClick={() => updateField("notifyKind", "individual")}
+                >
+                  Individual
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    form.notifyKind === "channel"
+                      ? "bg-slate-800 text-white"
+                      : "border border-border bg-white text-slate-700"
+                  }`}
+                  onClick={() => updateField("notifyKind", "channel")}
+                >
+                  Channel
+                </button>
+              </div>
+            ) : null}
+
             <div className="grid gap-2 sm:grid-cols-2">
               <input
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
@@ -233,12 +273,19 @@ export function ContactsManager() {
                   value={form.phone}
                   onChange={(event) => updateField("phone", event.target.value)}
                 />
-              ) : (
+              ) : form.notifyKind === "individual" ? (
                 <input
                   className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   placeholder="Notify client UUID (required)"
                   value={form.notifyClientId}
                   onChange={(event) => updateField("notifyClientId", event.target.value)}
+                />
+              ) : (
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Notify channel UUID (required)"
+                  value={form.notifyChannelId}
+                  onChange={(event) => updateField("notifyChannelId", event.target.value)}
                 />
               )}
               <input
@@ -320,7 +367,7 @@ export function ContactsManager() {
 
         <input
           className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm"
-          placeholder="Search name, phone, Notify ID, facility"
+          placeholder="Search name, phone, Notify ID, channel, facility"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -338,13 +385,15 @@ export function ContactsManager() {
               <p className="text-sm text-muted">
                 {contact.phone
                   ? contact.phone
-                  : contact.notifyClientId
-                    ? `Notify: ${contact.notifyClientId}`
-                    : "No identity"}
+                  : contact.notifyChannelId
+                    ? `Notify channel: ${contact.notifyChannelId}`
+                    : contact.notifyClientId
+                      ? `Notify: ${contact.notifyClientId}`
+                      : "No identity"}
               </p>
               <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
               <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
-              {contact.notifyClientId ? (
+              {contact.notifyClientId || contact.notifyChannelId ? (
                 <p className="mt-1 text-xs text-muted">
                   App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
                 </p>

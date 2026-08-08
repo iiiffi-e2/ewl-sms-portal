@@ -21,13 +21,14 @@ function normalizeOptional(value: string | null | undefined): string | null {
 function assertNotifyContactComplete(contact: {
   name: string | null;
   notifyClientId: string | null;
+  notifyChannelId: string | null;
   phone: string | null;
   commStackAppId: string | null;
   commStackAppName: string | null;
   commStackBaseUrl: string | null;
   commStackPortalUserId: string | null;
 }) {
-  if (!contact.notifyClientId) return;
+  if (!contact.notifyClientId && !contact.notifyChannelId) return;
   if (!contact.name?.trim()) {
     throw new Error("Name is required for Notify contacts.");
   }
@@ -61,6 +62,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   let nextPhone = existing.phone;
   let nextNotifyClientId = existing.notifyClientId;
+  let nextNotifyChannelId = existing.notifyChannelId;
 
   try {
     if (hasField<typeof parsed.data>("phone")) {
@@ -69,7 +71,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (hasField<typeof parsed.data>("notifyClientId")) {
       nextNotifyClientId = parsed.data.notifyClientId?.trim() || null;
     }
-    assertContactIdentityXor({ phone: nextPhone, notifyClientId: nextNotifyClientId });
+    if (hasField<typeof parsed.data>("notifyChannelId")) {
+      nextNotifyChannelId = parsed.data.notifyChannelId?.trim() || null;
+    }
+    assertContactIdentityXor({
+      phone: nextPhone,
+      notifyClientId: nextNotifyClientId,
+      notifyChannelId: nextNotifyChannelId,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Invalid contact identity." },
@@ -77,7 +86,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     );
   }
 
-  const isNotify = Boolean(nextNotifyClientId);
+  const isNotify = Boolean(nextNotifyClientId || nextNotifyChannelId);
+  const identityTouched =
+    hasField<typeof parsed.data>("phone") ||
+    hasField<typeof parsed.data>("notifyClientId") ||
+    hasField<typeof parsed.data>("notifyChannelId");
   const nextName = hasField<typeof parsed.data>("name")
     ? (parsed.data.name ?? null)
     : existing.name;
@@ -113,6 +126,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       name: nextName,
       phone: nextPhone,
       notifyClientId: nextNotifyClientId,
+      notifyChannelId: nextNotifyChannelId,
       commStackAppId: nextAppId,
       commStackAppName: nextAppName,
       commStackBaseUrl: nextBaseUrl,
@@ -130,13 +144,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { id },
       data: {
         name: hasField<typeof parsed.data>("name") ? (parsed.data.name ?? null) : undefined,
-        phone: hasField<typeof parsed.data>("phone") || hasField<typeof parsed.data>("notifyClientId")
-          ? nextPhone
-          : undefined,
-        notifyClientId:
-          hasField<typeof parsed.data>("phone") || hasField<typeof parsed.data>("notifyClientId")
-            ? nextNotifyClientId
-            : undefined,
+        phone: identityTouched ? nextPhone : undefined,
+        notifyClientId: identityTouched ? nextNotifyClientId : undefined,
+        notifyChannelId: identityTouched ? nextNotifyChannelId : undefined,
         facility: hasField<typeof parsed.data>("facility") ? (parsed.data.facility ?? null) : undefined,
         address: hasField<typeof parsed.data>("address") ? (parsed.data.address ?? null) : undefined,
         notes: hasField<typeof parsed.data>("notes") ? (parsed.data.notes ?? null) : undefined,
@@ -175,7 +185,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
-        { error: "A contact with this phone number or Notify client ID already exists." },
+        {
+          error:
+            "A contact with this phone number, Notify client ID, or channel ID already exists.",
+        },
         { status: 409 },
       );
     }

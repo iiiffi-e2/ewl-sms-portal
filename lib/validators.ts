@@ -21,6 +21,18 @@ const optionalNotifyClientId = z
     "Notify client ID must be a valid UUID.",
   );
 
+const optionalNotifyChannelId = z
+  .string()
+  .trim()
+  .min(1, "Notify channel ID is required.")
+  .max(120)
+  .optional()
+  .nullable()
+  .refine(
+    (value) => !value || isCommStackUserId(value),
+    "Notify channel ID must be a valid UUID.",
+  );
+
 const optionalCommStackString = z.string().trim().min(1).max(240).optional().nullable();
 
 const optionalCommStackPortalUserId = z
@@ -50,9 +62,10 @@ const contactCommStackShape = {
   commStackPortalUserId: optionalCommStackPortalUserId,
 };
 
-type ContactCommStackInput = {
+type ContactIdentityInput = {
   phone?: string | null;
   notifyClientId?: string | null;
+  notifyChannelId?: string | null;
   name?: string | null;
   commStackAppId?: string | null;
   commStackAppName?: string | null;
@@ -60,19 +73,19 @@ type ContactCommStackInput = {
   commStackPortalUserId?: string | null;
 };
 
-function refinePhoneXorNotifyClientId(
-  data: { phone?: string | null; notifyClientId?: string | null },
-  ctx: z.RefinementCtx,
-) {
+function refineContactIdentityXor(data: ContactIdentityInput, ctx: z.RefinementCtx) {
   const hasPhone = Boolean(data.phone?.trim());
-  const hasNotify = Boolean(data.notifyClientId?.trim());
-  if (hasPhone === hasNotify) {
-    ctx.addIssue({
-      code: "custom",
-      path: hasPhone ? ["notifyClientId"] : ["phone"],
-      message: "Provide either a phone number or a Notify client ID, not both.",
-    });
-  }
+  const hasClient = Boolean(data.notifyClientId?.trim());
+  const hasChannel = Boolean(data.notifyChannelId?.trim());
+  const count = Number(hasPhone) + Number(hasClient) + Number(hasChannel);
+  if (count === 1) return;
+
+  ctx.addIssue({
+    code: "custom",
+    path: hasChannel ? ["notifyChannelId"] : hasClient ? ["notifyClientId"] : ["phone"],
+    message:
+      "Provide exactly one of: phone number, Notify client ID, or Notify channel ID.",
+  });
 }
 
 const COMM_STACK_FIELD_LABELS = {
@@ -83,9 +96,10 @@ const COMM_STACK_FIELD_LABELS = {
 } as const;
 
 /** Require CommStack fields + name for Notify; forbid them on SMS. */
-function refineNotifyCommStackConfig(data: ContactCommStackInput, ctx: z.RefinementCtx) {
+function refineNotifyCommStackConfig(data: ContactIdentityInput, ctx: z.RefinementCtx) {
   const hasPhone = Boolean(data.phone?.trim());
-  const hasNotify = Boolean(data.notifyClientId?.trim());
+  const hasNotify =
+    Boolean(data.notifyClientId?.trim()) || Boolean(data.notifyChannelId?.trim());
   const fields = Object.keys(COMM_STACK_FIELD_LABELS) as Array<keyof typeof COMM_STACK_FIELD_LABELS>;
 
   if (hasPhone) {
@@ -137,16 +151,23 @@ export const sendMessageSchema = z
       .max(120)
       .refine((value) => isCommStackUserId(value), "Notify client ID must be a valid UUID.")
       .optional(),
+    notifyChannelId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .refine((value) => isCommStackUserId(value), "Notify channel ID must be a valid UUID.")
+      .optional(),
     body: z.string().trim().min(1, "Message cannot be empty.").max(1600, "Message is too long."),
     contactName: z.string().trim().min(1).max(120).optional(),
     facility: z.string().trim().min(1).max(120).optional(),
   })
   .superRefine((data, ctx) => {
-    if (!data.conversationId && !data.phone && !data.notifyClientId) {
+    if (!data.conversationId && !data.phone && !data.notifyClientId && !data.notifyChannelId) {
       ctx.addIssue({
         code: "custom",
         path: ["phone"],
-        message: "Provide a conversation, phone number, or Notify client ID.",
+        message: "Provide a conversation, phone number, Notify client ID, or channel ID.",
       });
     }
   });
@@ -156,6 +177,7 @@ export const createConversationSchema = z
     name: z.string().trim().min(1).max(120).optional().nullable(),
     phone: optionalPhone,
     notifyClientId: optionalNotifyClientId,
+    notifyChannelId: optionalNotifyChannelId,
     facility: z.string().trim().max(120).optional().nullable(),
     address: z.string().trim().max(240).optional().nullable(),
     notes: z.string().trim().max(2000).optional().nullable(),
@@ -164,7 +186,7 @@ export const createConversationSchema = z
     ...contactCommStackShape,
   })
   .superRefine((data, ctx) => {
-    refinePhoneXorNotifyClientId(data, ctx);
+    refineContactIdentityXor(data, ctx);
     refineNotifyCommStackConfig(data, ctx);
   });
 
@@ -173,6 +195,7 @@ export const createContactSchema = z
     name: z.string().trim().min(1).max(120).optional().nullable(),
     phone: optionalPhone,
     notifyClientId: optionalNotifyClientId,
+    notifyChannelId: optionalNotifyChannelId,
     facility: z.string().trim().max(120).optional().nullable(),
     address: z.string().trim().max(240).optional().nullable(),
     notes: z.string().trim().max(2000).optional().nullable(),
@@ -181,7 +204,7 @@ export const createContactSchema = z
     ...contactCommStackShape,
   })
   .superRefine((data, ctx) => {
-    refinePhoneXorNotifyClientId(data, ctx);
+    refineContactIdentityXor(data, ctx);
     refineNotifyCommStackConfig(data, ctx);
   });
 
@@ -190,6 +213,7 @@ export const updateContactSchema = z
     name: z.string().trim().min(1).max(120).optional().nullable(),
     phone: optionalPhone,
     notifyClientId: optionalNotifyClientId,
+    notifyChannelId: optionalNotifyChannelId,
     facility: z.string().trim().max(120).optional().nullable(),
     address: z.string().trim().max(240).optional().nullable(),
     notes: z.string().trim().max(2000).optional().nullable(),
@@ -199,12 +223,20 @@ export const updateContactSchema = z
   })
   .superRefine((data, ctx) => {
     const phoneProvided = Object.prototype.hasOwnProperty.call(data, "phone");
-    const notifyProvided = Object.prototype.hasOwnProperty.call(data, "notifyClientId");
-    if (phoneProvided && notifyProvided) {
-      refinePhoneXorNotifyClientId(data, ctx);
+    const clientProvided = Object.prototype.hasOwnProperty.call(data, "notifyClientId");
+    const channelProvided = Object.prototype.hasOwnProperty.call(data, "notifyChannelId");
+    if (phoneProvided || clientProvided || channelProvided) {
+      // When any identity field is patched, require a coherent XOR on the provided set.
+      // Full merged validation runs server-side after combining with the existing contact.
+      const providedCount =
+        Number(phoneProvided && Boolean(data.phone?.trim())) +
+        Number(clientProvided && Boolean(data.notifyClientId?.trim())) +
+        Number(channelProvided && Boolean(data.notifyChannelId?.trim()));
+      if (providedCount > 1) {
+        refineContactIdentityXor(data, ctx);
+      }
     }
-    // Full Notify CommStack validation runs server-side after merge with existing contact.
-    if (data.notifyClientId?.trim()) {
+    if (data.notifyClientId?.trim() || data.notifyChannelId?.trim()) {
       refineNotifyCommStackConfig(data, ctx);
     }
     if (data.phone?.trim()) {

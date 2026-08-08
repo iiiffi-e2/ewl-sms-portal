@@ -24,6 +24,7 @@ export type ConversationDetail = {
     name: string | null;
     phone: string | null;
     notifyClientId: string | null;
+    notifyChannelId: string | null;
     facility: string | null;
     address: string | null;
     notes: string | null;
@@ -178,7 +179,7 @@ export function useConversationDetail(initialConversationId?: string) {
         const data = await response.json();
         const conversation = data.conversation as ConversationDetail;
 
-        if (conversation.contact?.notifyClientId) {
+        if (conversation.contact?.notifyClientId || conversation.contact?.notifyChannelId) {
           try {
             await fetch(`/api/conversations/${id}/commstack-sync`, {
               method: "POST",

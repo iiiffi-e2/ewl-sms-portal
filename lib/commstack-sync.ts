@@ -1,6 +1,7 @@
 import { ConversationStatus, MessageDirection, MessageStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
+  fetchCommStackChannelHistory,
   fetchCommStackDirectHistory,
   getContactCommStackConfig,
   hasContactCommStackConfig,
@@ -20,15 +21,27 @@ export async function syncCommStackConversation(conversationId: string): Promise
     include: { contact: true },
   });
 
-  if (!conversation?.contact?.notifyClientId || !hasContactCommStackConfig(conversation.contact)) {
+  const contact = conversation?.contact;
+  if (!contact || !hasContactCommStackConfig(contact)) {
     return 0;
   }
 
-  const config = getContactCommStackConfig(conversation.contact);
-  const history = await fetchCommStackDirectHistory(config, {
-    otherUserId: conversation.contact.notifyClientId,
-    limit: 50,
-  });
+  const isChannel = Boolean(contact.notifyChannelId);
+  const isIndividual = Boolean(contact.notifyClientId);
+  if (!isChannel && !isIndividual) {
+    return 0;
+  }
+
+  const config = getContactCommStackConfig(contact);
+  const history = isChannel
+    ? await fetchCommStackChannelHistory(config, {
+        channelId: contact.notifyChannelId!,
+        limit: 50,
+      })
+    : await fetchCommStackDirectHistory(config, {
+        otherUserId: contact.notifyClientId!,
+        limit: 50,
+      });
 
   let imported = 0;
   for (const item of history) {
@@ -98,8 +111,6 @@ export async function syncCommStackConversation(conversationId: string): Promise
 /**
  * Pull CommStack history for recent Notify conversations so inbound replies
  * appear in the inbox list even when those threads are not open in the UI.
- * Realtime ingest covers this when the Node socket is connected; this is the
- * reliable backfill for multi-instance / disconnected cases.
  */
 export async function syncCommStackInbox(options?: {
   limit?: number;
@@ -113,7 +124,7 @@ export async function syncCommStackInbox(options?: {
     where: {
       archivedAt: null,
       contact: {
-        notifyClientId: { not: null },
+        OR: [{ notifyClientId: { not: null } }, { notifyChannelId: { not: null } }],
         commStackAppId: { not: null },
       },
     },

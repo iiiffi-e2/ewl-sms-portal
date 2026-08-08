@@ -31,67 +31,45 @@ function connectionKey(config: ContactCommStackConfig): string {
   return `${config.baseUrl}|${config.appId}|${config.portalUserId}`;
 }
 
-async function ingestRealtimeDirectMessage(
+async function attachOutboundEcho(messageId: string, text: string): Promise<boolean> {
+  const orphan = await prisma.message.findFirst({
+    where: {
+      direction: MessageDirection.outbound,
+      body: text,
+      commStackMessageId: null,
+      status: { in: [MessageStatus.queued, MessageStatus.sent, MessageStatus.delivered] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!orphan) return false;
+  await prisma.message.update({
+    where: { id: orphan.id },
+    data: {
+      commStackMessageId: messageId,
+      status: MessageStatus.sent,
+    },
+  });
+  return true;
+}
+
+async function ingestInboundForContact(
   config: ContactCommStackConfig,
+  contact: {
+    id: string;
+    commStackAppId: string | null;
+    commStackPortalUserId: string | null;
+  },
   message: RealtimeMessage,
 ): Promise<void> {
-  const portalUserId = config.portalUserId;
-  const messageId = message.message_id != null ? String(message.message_id) : null;
-  const text = message.text?.trim();
-  const sender = message.sender?.trim();
-
-  if (!messageId || !text || !sender) {
-    return;
-  }
-
-  const existing = await prisma.message.findUnique({
-    where: { commStackMessageId: messageId },
-    select: { id: true },
-  });
-  if (existing) {
-    return;
-  }
-
-  // Echo of our own outbound send — already stored locally by /api/messages/send.
-  if (sender === portalUserId) {
-    const orphan = await prisma.message.findFirst({
-      where: {
-        direction: MessageDirection.outbound,
-        body: text,
-        commStackMessageId: null,
-        status: { in: [MessageStatus.queued, MessageStatus.sent, MessageStatus.delivered] },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (orphan) {
-      await prisma.message.update({
-        where: { id: orphan.id },
-        data: {
-          commStackMessageId: messageId,
-          status: MessageStatus.sent,
-        },
-      });
-    }
-    return;
-  }
-
-  const contact = await prisma.contact.findUnique({
-    where: { notifyClientId: sender },
-  });
-  if (!contact) {
-    console.warn(
-      `[commstack] inbound DM from unknown Notify user ${sender}; message ${messageId} ignored`,
-    );
-    return;
-  }
-
-  // Only ingest into threads that use this same CommStack app/portal.
   if (
     contact.commStackAppId !== config.appId ||
     contact.commStackPortalUserId !== config.portalUserId
   ) {
     return;
   }
+
+  const messageId = String(message.message_id);
+  const text = message.text!.trim();
 
   let conversation = await prisma.conversation.findFirst({
     where: {
@@ -140,6 +118,86 @@ async function ingestRealtimeDirectMessage(
   });
 }
 
+async function ingestRealtimeDirectMessage(
+  config: ContactCommStackConfig,
+  message: RealtimeMessage,
+): Promise<void> {
+  const portalUserId = config.portalUserId;
+  const messageId = message.message_id != null ? String(message.message_id) : null;
+  const text = message.text?.trim();
+  const sender = message.sender?.trim();
+
+  if (!messageId || !text || !sender) {
+    return;
+  }
+
+  const existing = await prisma.message.findUnique({
+    where: { commStackMessageId: messageId },
+    select: { id: true },
+  });
+  if (existing) {
+    return;
+  }
+
+  // Echo of our own outbound send — already stored locally by /api/messages/send.
+  if (sender === portalUserId) {
+    await attachOutboundEcho(messageId, text);
+    return;
+  }
+
+  const contact = await prisma.contact.findUnique({
+    where: { notifyClientId: sender },
+  });
+  if (!contact) {
+    console.warn(
+      `[commstack] inbound DM from unknown Notify user ${sender}; message ${messageId} ignored`,
+    );
+    return;
+  }
+
+  await ingestInboundForContact(config, contact, message);
+}
+
+async function ingestRealtimeChannelMessage(
+  config: ContactCommStackConfig,
+  message: RealtimeMessage,
+): Promise<void> {
+  const portalUserId = config.portalUserId;
+  const messageId = message.message_id != null ? String(message.message_id) : null;
+  const text = message.text?.trim();
+  const sender = message.sender?.trim();
+  const channelId = message.channel_id?.trim();
+
+  if (!messageId || !text || !sender || !channelId) {
+    return;
+  }
+
+  const existing = await prisma.message.findUnique({
+    where: { commStackMessageId: messageId },
+    select: { id: true },
+  });
+  if (existing) {
+    return;
+  }
+
+  if (sender === portalUserId) {
+    await attachOutboundEcho(messageId, text);
+    return;
+  }
+
+  const contact = await prisma.contact.findUnique({
+    where: { notifyChannelId: channelId },
+  });
+  if (!contact) {
+    console.warn(
+      `[commstack] inbound channel message for unknown channel ${channelId}; message ${messageId} ignored`,
+    );
+    return;
+  }
+
+  await ingestInboundForContact(config, contact, message);
+}
+
 async function startConnection(config: ContactCommStackConfig): Promise<void> {
   const key = connectionKey(config);
   let state = connections.get(key);
@@ -180,6 +238,12 @@ async function startConnection(config: ContactCommStackConfig): Promise<void> {
       comms.realtime.on("directMessage", (message) => {
         void ingestRealtimeDirectMessage(config, message).catch((error) => {
           console.error("[commstack] failed to ingest directMessage", error);
+        });
+      });
+
+      comms.realtime.on("message", (message) => {
+        void ingestRealtimeChannelMessage(config, message).catch((error) => {
+          console.error("[commstack] failed to ingest channel message", error);
         });
       });
 
@@ -235,7 +299,7 @@ export async function ensureCommStackRealtimeForConfig(
 async function loadDistinctConfigs(): Promise<ContactCommStackConfig[]> {
   const contacts = await prisma.contact.findMany({
     where: {
-      notifyClientId: { not: null },
+      OR: [{ notifyClientId: { not: null } }, { notifyChannelId: { not: null } }],
       commStackAppId: { not: null },
       commStackAppName: { not: null },
       commStackBaseUrl: { not: null },

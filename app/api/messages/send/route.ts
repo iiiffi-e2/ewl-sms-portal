@@ -8,6 +8,7 @@ import {
   getContactCommStackConfig,
   hasContactCommStackConfig,
   isCommStackConfigured,
+  sendCommStackChannelMessage,
   sendCommStackDirectMessage,
 } from "@/lib/commstack";
 import { ensureCommStackRealtimeForConfig, startCommStackRealtime } from "@/lib/commstack-realtime";
@@ -52,6 +53,29 @@ export async function POST(request: Request) {
         {
           error:
             "Notify contact not found. Create the contact with CommStack settings before messaging.",
+        },
+        { status: 400 },
+      );
+    }
+    if (contactName || facility) {
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          name: contactName ?? undefined,
+          facility: facility ?? undefined,
+        },
+      });
+    }
+  }
+
+  if (!contact && parsed.data.notifyChannelId) {
+    const notifyChannelId = parsed.data.notifyChannelId.trim();
+    contact = await prisma.contact.findUnique({ where: { notifyChannelId } });
+    if (!contact) {
+      return NextResponse.json(
+        {
+          error:
+            "Notify channel contact not found. Create the contact with CommStack settings before messaging.",
         },
         { status: 400 },
       );
@@ -172,16 +196,24 @@ export async function POST(request: Request) {
         console.error("[commstack] realtime ensure-all-on-send failed", error);
       });
 
-      await ensureCommStackUser(config, {
-        userId: contact.notifyClientId!,
-        name: contact.name,
-      });
-
-      const result = await sendCommStackDirectMessage(config, {
-        receiverUserId: contact.notifyClientId!,
-        text: body,
-        senderName: authResult.session.user.name ?? "EyeWatch LIVE®",
-      });
+      const senderName = authResult.session.user.name ?? "EyeWatch LIVE®";
+      const result = contact.notifyChannelId
+        ? await sendCommStackChannelMessage(config, {
+            channelId: contact.notifyChannelId,
+            text: body,
+            senderName,
+          })
+        : await (async () => {
+            await ensureCommStackUser(config, {
+              userId: contact.notifyClientId!,
+              name: contact.name,
+            });
+            return sendCommStackDirectMessage(config, {
+              receiverUserId: contact.notifyClientId!,
+              text: body,
+              senderName,
+            });
+          })();
 
       // Per Notify SDK 1.2, ackId is the stored message id (matches realtime message_id).
       const savedMessage = await prisma.message.update({
