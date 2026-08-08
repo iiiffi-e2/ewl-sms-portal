@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { DeleteContactModal } from "@/components/caretext/DeleteContactModal";
 
 type Contact = {
   id: string;
@@ -105,7 +106,7 @@ export function ContactDetailsCard({
     commStackPortalUserId: "",
   });
   const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(isDraft);
   const [showNotifySettings, setShowNotifySettings] = useState(isDraft);
   const [error, setError] = useState<string | null>(null);
@@ -241,25 +242,6 @@ export function ContactDetailsCard({
     }
   }
 
-  async function handleDelete() {
-    if (!onDelete || !contact) return;
-    const confirmed = window.confirm(
-      "Delete this contact? They can be restored by creating a contact with the same phone/Notify ID.",
-    );
-    if (!confirmed) return;
-
-    setIsDeleting(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      await onDelete();
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Could not delete contact.");
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
   function updateForm(next: Partial<ContactFormState>) {
     setForm((current) => {
       const updated = { ...current, ...next };
@@ -272,8 +254,15 @@ export function ContactDetailsCard({
 
   const isDraftMode = isDraft && !contact;
   const identityLocked = Boolean(contact) && !isDraftMode;
+  const deleteLabel =
+    contact?.name?.trim() ||
+    contact?.phone ||
+    contact?.notifyChannelId ||
+    contact?.notifyClientId ||
+    "this contact";
 
   return (
+    <>
     <div className="rounded-xl border border-border bg-white p-4 text-sm">
       <div className="flex items-center justify-between">
         <p className="font-semibold">Contact Details</p>
@@ -525,14 +514,29 @@ export function ContactDetailsCard({
         <div className="mt-3 border-t border-border pt-3">
           <button
             type="button"
-            disabled={isDeleting || isEditing}
-            onClick={() => void handleDelete()}
+            disabled={isEditing}
+            onClick={() => {
+              setError(null);
+              setSuccess(null);
+              setIsDeleteModalOpen(true);
+            }}
             className="w-full rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:opacity-60"
           >
-            {isDeleting ? "Deleting..." : "Delete contact"}
+            Delete contact
           </button>
         </div>
       ) : null}
     </div>
+    {isDeleteModalOpen && onDelete && contact ? (
+      <DeleteContactModal
+        contactLabel={deleteLabel}
+        onCancel={() => setIsDeleteModalOpen(false)}
+        onConfirm={async () => {
+          await onDelete();
+          setIsDeleteModalOpen(false);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
