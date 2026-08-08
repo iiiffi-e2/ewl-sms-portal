@@ -13,6 +13,7 @@ import {
   isCommStackConfigured,
   type ContactCommStackConfig,
 } from "@/lib/commstack";
+import { isSoftDeleted } from "@/lib/contact-soft-delete";
 import { prisma } from "@/lib/prisma";
 
 type ConnectionState = {
@@ -145,7 +146,7 @@ async function ingestRealtimeDirectMessage(
     return;
   }
 
-  const contact = await prisma.contact.findUnique({
+  let contact = await prisma.contact.findUnique({
     where: { notifyClientId: sender },
   });
   if (!contact) {
@@ -153,6 +154,12 @@ async function ingestRealtimeDirectMessage(
       `[commstack] inbound DM from unknown Notify user ${sender}; message ${messageId} ignored`,
     );
     return;
+  }
+  if (isSoftDeleted(contact)) {
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: { deletedAt: null },
+    });
   }
 
   await ingestInboundForContact(config, contact, message);
@@ -185,7 +192,7 @@ async function ingestRealtimeChannelMessage(
     return;
   }
 
-  const contact = await prisma.contact.findUnique({
+  let contact = await prisma.contact.findUnique({
     where: { notifyChannelId: channelId },
   });
   if (!contact) {
@@ -193,6 +200,12 @@ async function ingestRealtimeChannelMessage(
       `[commstack] inbound channel message for unknown channel ${channelId}; message ${messageId} ignored`,
     );
     return;
+  }
+  if (isSoftDeleted(contact)) {
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: { deletedAt: null },
+    });
   }
 
   await ingestInboundForContact(config, contact, message);

@@ -46,6 +46,13 @@ export async function POST(request: Request) {
 
   let contact = conversation?.contact ?? null;
 
+  if (contact && isSoftDeleted(contact)) {
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: { deletedAt: null },
+    });
+  }
+
   if (!contact && parsed.data.notifyClientId) {
     const notifyClientId = parsed.data.notifyClientId.trim();
     contact = await prisma.contact.findUnique({ where: { notifyClientId } });
