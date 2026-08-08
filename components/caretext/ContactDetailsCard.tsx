@@ -104,6 +104,7 @@ export function ContactDetailsCard({
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(isDraft);
+  const [showNotifySettings, setShowNotifySettings] = useState(isDraft);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const lastContactIdRef = useRef<string | null>(null);
@@ -116,6 +117,8 @@ export function ContactDetailsCard({
         channel: current.channel,
       }));
       setIsEditing(true);
+      // Draft Notify creation needs the settings visible to fill required fields.
+      setShowNotifySettings(true);
       return;
     }
 
@@ -134,6 +137,7 @@ export function ContactDetailsCard({
       setError(null);
       setSuccess(null);
       setIsEditing(false);
+      setShowNotifySettings(false);
     }
   }, [contact, draftPhone, isDraft, isEditing]);
 
@@ -223,6 +227,7 @@ export function ContactDetailsCard({
 
       setSuccess("Saved.");
       setIsEditing(false);
+      setShowNotifySettings(false);
       if (onUpdated) {
         await onUpdated();
       }
@@ -263,6 +268,7 @@ export function ContactDetailsCard({
                 setError(null);
                 setSuccess(null);
                 setIsEditing(false);
+                setShowNotifySettings(false);
                 return;
               }
               setSuccess(null);
@@ -324,7 +330,10 @@ export function ContactDetailsCard({
                   ? "bg-indigo-600 text-white"
                   : "border border-border bg-white text-slate-700"
               }`}
-              onClick={() => updateForm({ channel: "notify" })}
+              onClick={() => {
+                updateForm({ channel: "notify" });
+                setShowNotifySettings(true);
+              }}
             >
               Notify
             </button>
@@ -339,34 +348,6 @@ export function ContactDetailsCard({
                 : "SMS"}
           </p>
         )}
-        {form.channel === "notify" && (isDraftMode || (isEditing && !identityLocked)) ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={!isEditing}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                form.notifyKind === "individual"
-                  ? "bg-slate-800 text-white"
-                  : "border border-border bg-white text-slate-700"
-              }`}
-              onClick={() => updateForm({ notifyKind: "individual" })}
-            >
-              Individual
-            </button>
-            <button
-              type="button"
-              disabled={!isEditing}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                form.notifyKind === "channel"
-                  ? "bg-slate-800 text-white"
-                  : "border border-border bg-white text-slate-700"
-              }`}
-              onClick={() => updateForm({ notifyKind: "channel" })}
-            >
-              Channel
-            </button>
-          </div>
-        ) : null}
         {form.channel === "sms" ? (
           <label className="block">
             <span className="text-xs font-medium text-muted">Phone number</span>
@@ -380,77 +361,116 @@ export function ContactDetailsCard({
             />
           </label>
         ) : (
-          <>
-            {form.notifyKind === "individual" ? (
-              <label className="block">
-                <span className="text-xs font-medium text-muted">Notify client UUID</span>
-                <input
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  value={form.notifyClientId}
-                  onChange={(event) => updateForm({ notifyClientId: event.target.value })}
-                  placeholder="Notify client UUID"
-                  required
-                  readOnly={!isEditing}
-                />
-              </label>
-            ) : (
-              <label className="block">
-                <span className="text-xs font-medium text-muted">Notify channel UUID</span>
-                <input
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  value={form.notifyChannelId}
-                  onChange={(event) => updateForm({ notifyChannelId: event.target.value })}
-                  placeholder="Notify channel UUID"
-                  required
-                  readOnly={!isEditing}
-                />
-              </label>
-            )}
-            <label className="block">
-              <span className="text-xs font-medium text-muted">COMM_STACK_APP_ID</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                value={form.commStackAppId}
-                onChange={(event) => updateForm({ commStackAppId: event.target.value })}
-                placeholder="Application UUID"
-                required
-                readOnly={!isEditing}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-muted">COMM_STACK_APP_NAME</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                value={form.commStackAppName}
-                onChange={(event) => updateForm({ commStackAppName: event.target.value })}
-                placeholder="Application name"
-                required
-                readOnly={!isEditing}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-muted">COMM_STACK_BASE_URL</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                value={form.commStackBaseUrl}
-                onChange={(event) => updateForm({ commStackBaseUrl: event.target.value })}
-                placeholder="qsscommbe3.notifync.com"
-                required
-                readOnly={!isEditing}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-muted">COMM_STACK_PORTAL_USER_ID</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                value={form.commStackPortalUserId}
-                onChange={(event) => updateForm({ commStackPortalUserId: event.target.value })}
-                placeholder="Portal sender UUID"
-                required
-                readOnly={!isEditing}
-              />
-            </label>
-          </>
+          <div className="space-y-2">
+            <button
+              type="button"
+              className="text-xs font-medium text-indigo-700 underline-offset-2 hover:underline"
+              onClick={() => setShowNotifySettings((open) => !open)}
+            >
+              {showNotifySettings ? "Hide Notify Settings" : "Notify Settings"}
+            </button>
+            {showNotifySettings ? (
+              <div className="space-y-3 rounded-lg border border-border bg-slate-50 p-3">
+                {isDraftMode || (isEditing && !identityLocked) ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={!isEditing}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                        form.notifyKind === "individual"
+                          ? "bg-slate-800 text-white"
+                          : "border border-border bg-white text-slate-700"
+                      }`}
+                      onClick={() => updateForm({ notifyKind: "individual" })}
+                    >
+                      Individual
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isEditing}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                        form.notifyKind === "channel"
+                          ? "bg-slate-800 text-white"
+                          : "border border-border bg-white text-slate-700"
+                      }`}
+                      onClick={() => updateForm({ notifyKind: "channel" })}
+                    >
+                      Channel
+                    </button>
+                  </div>
+                ) : null}
+                {form.notifyKind === "individual" ? (
+                  <label className="block">
+                    <span className="text-xs font-medium text-muted">Notify client UUID</span>
+                    <input
+                      className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                      value={form.notifyClientId}
+                      onChange={(event) => updateForm({ notifyClientId: event.target.value })}
+                      placeholder="Notify client UUID"
+                      required={showNotifySettings}
+                      readOnly={!isEditing}
+                    />
+                  </label>
+                ) : (
+                  <label className="block">
+                    <span className="text-xs font-medium text-muted">Notify channel UUID</span>
+                    <input
+                      className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                      value={form.notifyChannelId}
+                      onChange={(event) => updateForm({ notifyChannelId: event.target.value })}
+                      placeholder="Notify channel UUID"
+                      required={showNotifySettings}
+                      readOnly={!isEditing}
+                    />
+                  </label>
+                )}
+                <label className="block">
+                  <span className="text-xs font-medium text-muted">COMM_STACK_APP_ID</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                    value={form.commStackAppId}
+                    onChange={(event) => updateForm({ commStackAppId: event.target.value })}
+                    placeholder="Application UUID"
+                    required={showNotifySettings}
+                    readOnly={!isEditing}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-muted">COMM_STACK_APP_NAME</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                    value={form.commStackAppName}
+                    onChange={(event) => updateForm({ commStackAppName: event.target.value })}
+                    placeholder="Application name"
+                    required={showNotifySettings}
+                    readOnly={!isEditing}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-muted">COMM_STACK_BASE_URL</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                    value={form.commStackBaseUrl}
+                    onChange={(event) => updateForm({ commStackBaseUrl: event.target.value })}
+                    placeholder="qsscommbe3.notifync.com"
+                    required={showNotifySettings}
+                    readOnly={!isEditing}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-muted">COMM_STACK_PORTAL_USER_ID</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                    value={form.commStackPortalUserId}
+                    onChange={(event) => updateForm({ commStackPortalUserId: event.target.value })}
+                    placeholder="Portal sender UUID"
+                    required={showNotifySettings}
+                    readOnly={!isEditing}
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
         )}
         <label className="block">
           <span className="text-xs font-medium text-muted">Address</span>
