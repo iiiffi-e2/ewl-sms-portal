@@ -60,6 +60,7 @@ type ContactDetailsCardProps = {
   onDraftPhoneChange?: (phone: string) => void;
   onCreate?: (payload: SmsCreatePayload | NotifyCreatePayload) => Promise<void> | void;
   onUpdated?: () => Promise<void> | void;
+  onDelete?: () => Promise<void> | void;
 };
 
 function formFromContact(contact: Contact): ContactFormState {
@@ -87,6 +88,7 @@ export function ContactDetailsCard({
   onDraftPhoneChange,
   onCreate,
   onUpdated,
+  onDelete,
 }: ContactDetailsCardProps) {
   const [form, setForm] = useState<ContactFormState>({
     name: "",
@@ -103,6 +105,7 @@ export function ContactDetailsCard({
     commStackPortalUserId: "",
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(isDraft);
   const [showNotifySettings, setShowNotifySettings] = useState(isDraft);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +238,25 @@ export function ContactDetailsCard({
       setError(submissionError instanceof Error ? submissionError.message : "Failed to save contact details.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!onDelete || !contact) return;
+    const confirmed = window.confirm(
+      "Delete this contact? They can be restored by creating a contact with the same phone/Notify ID.",
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await onDelete();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete contact.");
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -499,6 +521,18 @@ export function ContactDetailsCard({
           </button>
         ) : null}
       </form>
+      {onDelete && contact && !isDraftMode ? (
+        <div className="mt-3 border-t border-border pt-3">
+          <button
+            type="button"
+            disabled={isDeleting || isEditing}
+            onClick={() => void handleDelete()}
+            className="w-full rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:opacity-60"
+          >
+            {isDeleting ? "Deleting..." : "Delete contact"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
