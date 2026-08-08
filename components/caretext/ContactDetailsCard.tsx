@@ -360,7 +360,18 @@ export function ContactDetailsCard({
               readOnly={!isEditing}
             />
           </label>
-        ) : (
+        ) : null}
+        <label className="block">
+          <span className="text-xs font-medium text-muted">Address</span>
+          <textarea
+            className="mt-1 min-h-20 w-full rounded-lg border border-border px-3 py-2"
+            value={form.address}
+            onChange={(event) => updateForm({ address: event.target.value })}
+            placeholder="Address"
+            readOnly={!isEditing}
+          />
+        </label>
+        {form.channel === "notify" ? (
           <div className="space-y-2">
             <button
               type="button"
@@ -471,17 +482,7 @@ export function ContactDetailsCard({
               </div>
             ) : null}
           </div>
-        )}
-        <label className="block">
-          <span className="text-xs font-medium text-muted">Address</span>
-          <textarea
-            className="mt-1 min-h-20 w-full rounded-lg border border-border px-3 py-2"
-            value={form.address}
-            onChange={(event) => updateForm({ address: event.target.value })}
-            placeholder="Address"
-            readOnly={!isEditing}
-          />
-        </label>
+        ) : null}
         {error ? <p className="text-xs text-red-600">{error}</p> : null}
         {success ? <p className="text-xs text-emerald-600">{success}</p> : null}
         {isEditing ? (
