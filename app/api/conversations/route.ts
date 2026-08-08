@@ -191,6 +191,7 @@ export async function POST(request: Request) {
     commStackAppName: commStackAppName ?? undefined,
     commStackBaseUrl: commStackBaseUrl ?? undefined,
     commStackPortalUserId: commStackPortalUserId ?? undefined,
+    deletedAt: null,
   };
 
   const contact = phone
@@ -209,6 +210,7 @@ export async function POST(request: Request) {
           commStackPortalUserId: null,
           notifyClientId: null,
           notifyChannelId: null,
+          deletedAt: null,
         },
         create: {
           phone,

@@ -14,6 +14,7 @@ import {
 import { ensureCommStackRealtimeForConfig, startCommStackRealtime } from "@/lib/commstack-realtime";
 import { evaluateOutboundConsent } from "@/lib/consent";
 import { isNotifyContact } from "@/lib/contact-identity";
+import { isSoftDeleted } from "@/lib/contact-soft-delete";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { sendMessageSchema } from "@/lib/validators";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
@@ -57,6 +58,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (isSoftDeleted(contact)) {
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
+        data: { deletedAt: null },
+      });
+    }
     if (contactName || facility) {
       contact = await prisma.contact.update({
         where: { id: contact.id },
@@ -80,6 +87,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (isSoftDeleted(contact)) {
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
+        data: { deletedAt: null },
+      });
+    }
     if (contactName || facility) {
       contact = await prisma.contact.update({
         where: { id: contact.id },
@@ -98,6 +111,7 @@ export async function POST(request: Request) {
       update: {
         name: contactName ?? undefined,
         facility: facility ?? undefined,
+        deletedAt: null,
       },
       create: {
         phone: normalizedPhone,

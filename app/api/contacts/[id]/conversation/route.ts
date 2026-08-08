@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { ensureConversationForContact } from "@/lib/contact-conversation";
+import { isSoftDeleted } from "@/lib/contact-soft-delete";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -19,10 +20,10 @@ export async function POST(
   const { id } = await params;
   const contact = await prisma.contact.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, deletedAt: true },
   });
 
-  if (!contact) {
+  if (!contact || isSoftDeleted(contact)) {
     return NextResponse.json({ error: "Contact not found." }, { status: 404 });
   }
 

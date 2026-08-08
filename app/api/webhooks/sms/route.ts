@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
   const contact = await prisma.contact.upsert({
     where: { phone: normalizedPhone },
-    update: {},
+    update: { deletedAt: null },
     create: { phone: normalizedPhone },
   });
 

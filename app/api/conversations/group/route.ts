@@ -2,6 +2,7 @@ import { ConsentStatus, ConversationStatus, ConversationType, ParticipantStatus 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
+import { ACTIVE_CONTACT_WHERE } from "@/lib/contact-soft-delete";
 import { buildDefaultGroupTitle, maybeActivateTwilioGroup, sendGroupConsentIntro } from "@/lib/group-conversations";
 import { createGroupConversationSchema } from "@/lib/validators";
 
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
 
   const uniqueContactIds = [...new Set(parsed.data.contactIds)];
   const contacts = await prisma.contact.findMany({
-    where: { id: { in: uniqueContactIds } },
+    where: { id: { in: uniqueContactIds }, ...ACTIVE_CONTACT_WHERE },
   });
 
   if (contacts.length !== uniqueContactIds.length) {
