@@ -10,7 +10,6 @@ import { ConversationComposerArea } from "@/components/caretext/ConversationComp
 import { GroupComposerArea } from "@/components/caretext/GroupComposerArea";
 import { NewGroupConversationModal } from "@/components/caretext/NewGroupConversationModal";
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
-import { AlertsPanel } from "@/components/caretext/AlertsPanel";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
@@ -766,7 +765,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   </p>
                 ) : null}
               </div>
-              <AlertsPanel onOpenConversation={handleSelectConversation} />
               <ContactDetailsCard
                 contact={activeConversation?.contact ?? undefined}
                 isDraft={isDraftConversation}
@@ -916,7 +914,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           </div>
 
           <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
-            <AlertsPanel onOpenConversation={handleSelectConversation} />
             <ContactDetailsCard
               contact={activeConversation?.contact ?? undefined}
               isDraft={isDraftConversation}
