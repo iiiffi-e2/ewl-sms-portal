@@ -137,7 +137,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     nextPortalUserId = null;
   } else {
     if (hasField<typeof parsed.data>("notifyFacilityCode")) {
-      nextFacilityCode = parsed.data.notifyFacilityCode ?? null;
+      nextFacilityCode = normalizeOptional(parsed.data.notifyFacilityCode);
     }
     if (hasField<typeof parsed.data>("commStackAppId")) {
       nextAppId = normalizeOptional(parsed.data.commStackAppId);

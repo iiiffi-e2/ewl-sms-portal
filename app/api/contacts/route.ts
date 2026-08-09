@@ -129,7 +129,9 @@ export async function POST(request: Request) {
     notes: parsed.data.notes ?? null,
     emergencyContactName: parsed.data.emergencyContactName ?? null,
     emergencyContactPhone,
-    notifyFacilityCode: isNotify ? (parsed.data.notifyFacilityCode ?? null) : null,
+    notifyFacilityCode: isNotify
+      ? normalizeOptional(parsed.data.notifyFacilityCode)
+      : null,
     commStackAppId: isNotify ? normalizeOptional(parsed.data.commStackAppId) : null,
     commStackAppName: isNotify ? normalizeOptional(parsed.data.commStackAppName) : null,
     commStackBaseUrl: isNotify

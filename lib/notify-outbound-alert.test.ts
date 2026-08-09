@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildNotifyAlertUrl,
   buildOutboundAlertPayload,
+  resolveNotifyOutboundTimeoutMs,
 } from "@/lib/notify-outbound-alert";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("buildNotifyAlertUrl", () => {
   it("strips scheme/trailing slash and builds palatiumCare path", () => {
@@ -34,5 +39,15 @@ describe("buildOutboundAlertPayload", () => {
       eventDateTime: "2026-08-08T12:00:00.000Z",
       location: { name: "214" },
     });
+  });
+});
+
+describe("resolveNotifyOutboundTimeoutMs", () => {
+  it("defaults to 15000 and reads COMM_STACK_TIMEOUT_MS", () => {
+    expect(resolveNotifyOutboundTimeoutMs()).toBe(15000);
+    vi.stubEnv("COMM_STACK_TIMEOUT_MS", "8000");
+    expect(resolveNotifyOutboundTimeoutMs()).toBe(8000);
+    vi.stubEnv("COMM_STACK_TIMEOUT_MS", "not-a-number");
+    expect(resolveNotifyOutboundTimeoutMs()).toBe(15000);
   });
 });

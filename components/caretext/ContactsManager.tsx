@@ -133,7 +133,9 @@ export function ContactsManager() {
         !form.commStackBaseUrl.trim() ||
         !form.commStackPortalUserId.trim()
       ) {
-        setError("All CommStack fields are required for Notify contacts.");
+        setError(
+          "Facility code and all CommStack fields are required for Notify contacts.",
+        );
         return;
       }
     }

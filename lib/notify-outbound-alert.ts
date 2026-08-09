@@ -77,6 +77,44 @@ export function buildOutboundAlertPayload(input: {
   };
 }
 
+/** Thrown after the Notify request id/timestamp were minted so failed audits can correlate. */
+export class NotifyOutboundAlertSendError extends Error {
+  readonly externalId: string;
+  readonly eventDateTime: string;
+  readonly requestPayload: unknown;
+
+  constructor(
+    message: string,
+    meta: {
+      externalId: string;
+      eventDateTime: string;
+      requestPayload: unknown;
+    },
+  ) {
+    super(message);
+    this.name = "NotifyOutboundAlertSendError";
+    this.externalId = meta.externalId;
+    this.eventDateTime = meta.eventDateTime;
+    this.requestPayload = meta.requestPayload;
+  }
+}
+
+export function resolveNotifyOutboundTimeoutMs(): number {
+  const raw = readEnv("COMM_STACK_TIMEOUT_MS");
+  const parsed = raw != null ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
+}
+
+function notifySendFailureMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return "Notify alert request timed out.";
+    }
+    return error.message || "Failed to reach Notify.";
+  }
+  return "Failed to reach Notify.";
+}
+
 export async function sendOutboundNotifyAlert(input: {
   baseUrl: string;
   facilityCode: string;
@@ -84,6 +122,7 @@ export async function sendOutboundNotifyAlert(input: {
   note?: string | null; // CareText-only until Notify confirms mapping
   sdkToken: string;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 }): Promise<{
   externalId: string;
   eventDateTime: string;
@@ -102,26 +141,38 @@ export async function sendOutboundNotifyAlert(input: {
   });
   const url = buildNotifyAlertUrl(input.baseUrl, input.facilityCode, eventDateTime);
   const fetchFn = input.fetchImpl ?? fetch;
-  const response = await fetchFn(url, {
-    method: "POST",
-    headers: {
-      // PROVISIONAL auth — confirm with Notify
-      Authorization: `Bearer ${input.sdkToken}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestPayload),
-  });
-  const responseBody = await response.text();
-  return {
-    externalId,
-    eventDateTime,
-    requestPayload,
-    responseStatus: response.status,
-    responseBody,
-    ok: response.ok,
-    note: input.note ?? null,
-  };
+  const timeoutMs = input.timeoutMs ?? resolveNotifyOutboundTimeoutMs();
+
+  try {
+    const response = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        // PROVISIONAL auth — confirm with Notify
+        Authorization: `Bearer ${input.sdkToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestPayload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const responseBody = await response.text();
+    return {
+      externalId,
+      eventDateTime,
+      requestPayload,
+      responseStatus: response.status,
+      responseBody,
+      ok: response.ok,
+      note: input.note ?? null,
+    };
+  } catch (error) {
+    if (error instanceof NotifyOutboundAlertSendError) throw error;
+    throw new NotifyOutboundAlertSendError(notifySendFailureMessage(error), {
+      externalId,
+      eventDateTime,
+      requestPayload,
+    });
+  }
 }
 
 type OutboundAlertDb = {
@@ -197,6 +248,7 @@ export async function processOutboundAlertSend(input: {
   note?: string | null;
   sdkToken: string;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
   db?: OutboundAlertDb;
 }): Promise<ProcessOutboundAlertSendResult> {
   const db = input.db ?? (defaultPrisma as unknown as OutboundAlertDb);
@@ -253,16 +305,21 @@ export async function processOutboundAlertSend(input: {
       note,
       sdkToken: input.sdkToken,
       fetchImpl: input.fetchImpl,
+      timeoutMs: input.timeoutMs,
     });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Failed to reach Notify.";
+    const correlated =
+      error instanceof NotifyOutboundAlertSendError ? error : null;
     await db.alert.create({
       data: {
-        externalId: randomUUID(),
+        externalId: correlated?.externalId ?? randomUUID(),
         type: AlertType.Alert,
         status: AlertStatus.failed,
-        eventDateTime: new Date(),
+        eventDateTime: correlated
+          ? new Date(correlated.eventDateTime)
+          : new Date(),
         facilityCode,
         locationName: room,
         note,
@@ -272,6 +329,7 @@ export async function processOutboundAlertSend(input: {
         errorMessage,
         payload: {
           error: errorMessage,
+          ...(correlated ? { request: correlated.requestPayload } : {}),
           room,
           note,
         } as Prisma.InputJsonValue,
