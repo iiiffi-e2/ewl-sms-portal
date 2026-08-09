@@ -696,6 +696,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                     hasMoreOlder={hasMoreOlderMessages}
                     isLoadingOlder={isLoadingOlder}
                     onLoadEarlier={loadOlderMessages}
+                    enableSendAlert={Boolean(
+                      activeConversation?.contact?.notifyClientId ||
+                        activeConversation?.contact?.notifyChannelId,
+                    )}
                   />
                 )}
               </div>
@@ -875,6 +879,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   hasMoreOlder={hasMoreOlderMessages}
                   isLoadingOlder={isLoadingOlder}
                   onLoadEarlier={loadOlderMessages}
+                  enableSendAlert={Boolean(
+                    activeConversation?.contact?.notifyClientId ||
+                      activeConversation?.contact?.notifyChannelId,
+                  )}
                 />
               )}
             </div>

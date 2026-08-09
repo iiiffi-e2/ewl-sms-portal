@@ -490,6 +490,10 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
                 hasMoreOlder={hasMoreOlderMessages}
                 isLoadingOlder={isLoadingOlder}
                 onLoadEarlier={loadOlderMessages}
+                enableSendAlert={Boolean(
+                  activeConversation?.contact?.notifyClientId ||
+                    activeConversation?.contact?.notifyChannelId,
+                )}
               />
             )}
           </div>

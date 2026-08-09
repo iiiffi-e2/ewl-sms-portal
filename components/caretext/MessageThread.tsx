@@ -1,11 +1,11 @@
 "use client";
 
-import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageBubble } from "@/components/caretext/MessageBubble";
 import { CallThreadBar } from "@/components/caretext/CallThreadBar";
+import { SendAlertModal } from "@/components/caretext/SendAlertModal";
 import { attachReactionsToMessages, type MessageReaction } from "@/lib/message-reactions";
-import { formatMessageTime } from "@/lib/format";
-import { parseNotifyAlertDisplay } from "@/lib/notify-alert-format";
+import { extractRoomMention } from "@/lib/notify-room";
 
 type Message = {
   id: string;
@@ -64,6 +64,12 @@ type ThreadItem =
   | { kind: "message"; id: string; at: string; message: DisplayMessage }
   | { kind: "call"; id: string; at: string; callLog: CallLog };
 
+type AlertTarget = {
+  messageId: string;
+  body: string;
+  room: string;
+};
+
 export const MessageThread = memo(function MessageThread({
   messages,
   callLogs = [],
@@ -73,6 +79,7 @@ export const MessageThread = memo(function MessageThread({
   hasMoreOlder = false,
   isLoadingOlder = false,
   onLoadEarlier,
+  enableSendAlert = false,
 }: {
   messages: Message[];
   callLogs?: CallLog[];
@@ -82,6 +89,7 @@ export const MessageThread = memo(function MessageThread({
   hasMoreOlder?: boolean;
   isLoadingOlder?: boolean;
   onLoadEarlier?: () => void | Promise<void>;
+  enableSendAlert?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastAutoScrolledConversationIdRef = useRef<string | null>(null);
@@ -90,6 +98,7 @@ export const MessageThread = memo(function MessageThread({
   // Whether the user was pinned near the bottom just before the latest render,
   // so we only auto-follow inbound messages when they weren't reading history.
   const wasNearBottomRef = useRef(true);
+  const [alertTarget, setAlertTarget] = useState<AlertTarget | null>(null);
 
   const displayMessages = useMemo<DisplayMessage[]>(
     () =>
@@ -237,103 +246,115 @@ export const MessageThread = memo(function MessageThread({
   }
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={(event) => {
-        const container = event.currentTarget;
-        wasNearBottomRef.current =
-          container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-      }}
-      className="flex h-full flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-slate-50 p-4"
-    >
-      {hasMoreOlder ? (
-        <button
-          type="button"
-          onClick={handleLoadEarlier}
-          disabled={isLoadingOlder}
-          className="mx-auto shrink-0 rounded-full border border-border bg-white px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
-        >
-          {isLoadingOlder ? "Loading..." : "Load earlier messages"}
-        </button>
-      ) : null}
-      {threadItems.map((item) =>
-        item.kind === "message" ? (
-          item.message.isSystemNote ? (
-            (() => {
-              const alertDisplay = parseNotifyAlertDisplay(item.message.body);
-              if (!alertDisplay) {
-                return (
-                  <p key={item.id} className="px-4 py-1 text-center text-xs text-muted">
-                    {item.message.body}
-                  </p>
-                );
-              }
+    <>
+      <div
+        ref={containerRef}
+        onScroll={(event) => {
+          const container = event.currentTarget;
+          wasNearBottomRef.current =
+            container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+        }}
+        className="flex h-full flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-slate-50 p-4"
+      >
+        {hasMoreOlder ? (
+          <button
+            type="button"
+            onClick={handleLoadEarlier}
+            disabled={isLoadingOlder}
+            className="mx-auto shrink-0 rounded-full border border-border bg-white px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {isLoadingOlder ? "Loading..." : "Load earlier messages"}
+          </button>
+        ) : null}
+        {threadItems.map((item) =>
+          item.kind === "message" ? (
+            item.message.isSystemNote ? (
+              <p key={item.id} className="px-4 py-1 text-center text-xs text-muted">
+                {item.message.body}
+              </p>
+            ) : (
+              (() => {
+                const roomMention =
+                  enableSendAlert &&
+                  item.message.direction === "outbound" &&
+                  conversationId
+                    ? extractRoomMention(item.message.body)
+                    : null;
 
-              return (
-                <div key={item.id} className="flex justify-start">
-                  <div className="max-w-[85%] pl-1 sm:max-w-[70%]">
-                    <p className="mb-1 pl-1 text-[11px] font-semibold text-slate-600">
-                      {alertDisplay.title}
-                    </p>
-                    <div
-                      className={
-                        alertDisplay.cleared
-                          ? "rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-emerald-950 shadow-sm"
-                          : "rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-950 shadow-sm"
-                      }
-                    >
-                      {alertDisplay.lines.length ? (
-                        <div className="space-y-1 text-sm leading-relaxed">
-                          {alertDisplay.lines.map((line) => (
-                            <p key={line}>{line}</p>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm leading-relaxed text-slate-600">No details provided.</p>
-                      )}
-                      <div className="mt-2 text-[11px] text-slate-500">
-                        {formatMessageTime(item.message.createdAt)}
+                const bubble = (
+                  <MessageBubble
+                    body={item.message.body}
+                    direction={item.message.direction}
+                    status={item.message.status}
+                    createdAt={item.message.createdAt}
+                    reactions={item.message.reactionEmojis}
+                    inboundClassName={
+                      isGroup && item.message.direction === "inbound"
+                        ? resolveSenderColor(item.message.authorPhone).bubble
+                        : undefined
+                    }
+                  />
+                );
+
+                return (
+                  <div
+                    key={item.id}
+                    className={item.message.reactions.length > 0 ? "pb-2" : undefined}
+                  >
+                    {isGroup && item.message.direction === "inbound" ? (
+                      <p
+                        className={`mb-1 pl-1 text-[11px] font-medium ${resolveSenderColor(item.message.authorPhone).label}`}
+                      >
+                        {resolveAuthorLabel(item.message.authorPhone)}
+                      </p>
+                    ) : null}
+                    {roomMention ? (
+                      <div className="flex flex-col items-end gap-1">
+                        {bubble}
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-indigo-700 underline"
+                          onClick={() =>
+                            setAlertTarget({
+                              messageId: item.message.id,
+                              body: item.message.body,
+                              room: roomMention,
+                            })
+                          }
+                        >
+                          Send alert
+                        </button>
                       </div>
-                    </div>
+                    ) : (
+                      bubble
+                    )}
                   </div>
-                </div>
-              );
-            })()
+                );
+              })()
+            )
           ) : (
-            <div
+            <CallThreadBar
               key={item.id}
-              className={item.message.reactions.length > 0 ? "pb-2" : undefined}
-            >
-              {isGroup && item.message.direction === "inbound" ? (
-                <p
-                  className={`mb-1 pl-1 text-[11px] font-medium ${resolveSenderColor(item.message.authorPhone).label}`}
-                >
-                  {resolveAuthorLabel(item.message.authorPhone)}
-                </p>
-              ) : null}
-              <MessageBubble
-                body={item.message.body}
-                direction={item.message.direction}
-                status={item.message.status}
-                createdAt={item.message.createdAt}
-                reactions={item.message.reactionEmojis}
-                inboundClassName={
-                  isGroup && item.message.direction === "inbound"
-                    ? resolveSenderColor(item.message.authorPhone).bubble
-                    : undefined
-                }
-              />
-            </div>
-          )
-        ) : (
-          <CallThreadBar
-            key={item.id}
-            startedAt={item.callLog.startedAt}
-            status={item.callLog.status}
-            durationSeconds={item.callLog.durationSeconds}
-          />
-        ),
-      )}
-    </div>
+              startedAt={item.callLog.startedAt}
+              status={item.callLog.status}
+              durationSeconds={item.callLog.durationSeconds}
+            />
+          ),
+        )}
+      </div>
+      {alertTarget && conversationId ? (
+        <SendAlertModal
+          open
+          sourceMessagePreview={alertTarget.body}
+          initialRoom={alertTarget.room}
+          conversationId={conversationId}
+          messageId={alertTarget.messageId}
+          onClose={() => setAlertTarget(null)}
+          onSent={() => {
+            // Success is shown in the modal; no thread system note.
+          }}
+        />
+      ) : null}
+    </>
   );
 });
