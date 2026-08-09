@@ -4,6 +4,7 @@ import { createContactSchema, sendMessageSchema } from "@/lib/validators";
 const notifyIndividual = {
   notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
   name: "Ada",
+  notifyFacilityCode: "deb769",
   commStackAppId: "a7853715-005b-4eeb-ac8e-707f002ab943",
   commStackAppName: "ewl-caretext-dev",
   commStackBaseUrl: "qsscommbe3.notifync.com",
@@ -13,6 +14,7 @@ const notifyIndividual = {
 const notifyChannel = {
   notifyChannelId: "660e8400-e29b-41d4-a716-446655440000",
   name: "Ward A Channel",
+  notifyFacilityCode: "deb769",
   commStackAppId: "a7853715-005b-4eeb-ac8e-707f002ab943",
   commStackAppName: "ewl-caretext-dev",
   commStackBaseUrl: "qsscommbe3.notifync.com",
@@ -35,10 +37,38 @@ describe("createContactSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("rejects Notify contacts missing notifyFacilityCode", () => {
+    const { notifyFacilityCode: _omit, ...withoutFacilityCode } = notifyIndividual;
+    const parsed = createContactSchema.safeParse(withoutFacilityCode);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path[0] === "notifyFacilityCode")).toBe(
+        true,
+      );
+    }
+  });
+
+  it("accepts Notify contacts with notifyFacilityCode", () => {
+    const parsed = createContactSchema.safeParse({
+      ...notifyIndividual,
+      notifyFacilityCode: "deb769",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.notifyFacilityCode).toBe("deb769");
+    }
+  });
+
+  it("allows SMS contacts without notifyFacilityCode", () => {
+    const parsed = createContactSchema.safeParse({ phone: "+15551234567", name: "Ada" });
+    expect(parsed.success).toBe(true);
+  });
+
   it("rejects Notify contacts missing CommStack fields", () => {
     const parsed = createContactSchema.safeParse({
       notifyClientId: "550e8400-e29b-41d4-a716-446655440000",
       name: "Ada",
+      notifyFacilityCode: "deb769",
     });
     expect(parsed.success).toBe(false);
   });

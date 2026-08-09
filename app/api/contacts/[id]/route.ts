@@ -24,6 +24,7 @@ function assertNotifyContactComplete(contact: {
   notifyClientId: string | null;
   notifyChannelId: string | null;
   phone: string | null;
+  notifyFacilityCode: string | null;
   commStackAppId: string | null;
   commStackAppName: string | null;
   commStackBaseUrl: string | null;
@@ -32,6 +33,9 @@ function assertNotifyContactComplete(contact: {
   if (!contact.notifyClientId && !contact.notifyChannelId) return;
   if (!contact.name?.trim()) {
     throw new Error("Name is required for Notify contacts.");
+  }
+  if (!contact.notifyFacilityCode?.trim()) {
+    throw new Error("Notify facility code is required for Notify contacts.");
   }
   if (!hasContactCommStackConfig(contact)) {
     throw new Error(
@@ -119,17 +123,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     ? (parsed.data.name ?? null)
     : existing.name;
 
+  let nextFacilityCode = existing.notifyFacilityCode;
   let nextAppId = existing.commStackAppId;
   let nextAppName = existing.commStackAppName;
   let nextBaseUrl = existing.commStackBaseUrl;
   let nextPortalUserId = existing.commStackPortalUserId;
 
   if (!isNotify) {
+    nextFacilityCode = null;
     nextAppId = null;
     nextAppName = null;
     nextBaseUrl = null;
     nextPortalUserId = null;
   } else {
+    if (hasField<typeof parsed.data>("notifyFacilityCode")) {
+      nextFacilityCode = parsed.data.notifyFacilityCode ?? null;
+    }
     if (hasField<typeof parsed.data>("commStackAppId")) {
       nextAppId = normalizeOptional(parsed.data.commStackAppId);
     }
@@ -151,6 +160,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       phone: nextPhone,
       notifyClientId: nextNotifyClientId,
       notifyChannelId: nextNotifyChannelId,
+      notifyFacilityCode: nextFacilityCode,
       commStackAppId: nextAppId,
       commStackAppName: nextAppName,
       commStackBaseUrl: nextBaseUrl,
@@ -182,6 +192,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             ? normalizePhoneNumber(parsed.data.emergencyContactPhone)
             : null
           : undefined,
+        notifyFacilityCode: nextFacilityCode,
         commStackAppId: nextAppId,
         commStackAppName: nextAppName,
         commStackBaseUrl: nextBaseUrl,

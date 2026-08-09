@@ -169,6 +169,7 @@ export async function POST(request: Request) {
   }
 
   const isNotify = Boolean(notifyClientId || notifyChannelId);
+  const notifyFacilityCode = isNotify ? (parsed.data.notifyFacilityCode ?? null) : null;
   const commStackAppId = isNotify ? normalizeOptional(parsed.data.commStackAppId) : null;
   const commStackAppName = isNotify ? normalizeOptional(parsed.data.commStackAppName) : null;
   const commStackBaseUrl = isNotify
@@ -187,6 +188,7 @@ export async function POST(request: Request) {
     notes: parsed.data.notes ?? undefined,
     emergencyContactName: parsed.data.emergencyContactName ?? undefined,
     emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+    notifyFacilityCode: notifyFacilityCode ?? undefined,
     commStackAppId: commStackAppId ?? undefined,
     commStackAppName: commStackAppName ?? undefined,
     commStackBaseUrl: commStackBaseUrl ?? undefined,
@@ -204,6 +206,7 @@ export async function POST(request: Request) {
           notes: parsed.data.notes ?? undefined,
           emergencyContactName: parsed.data.emergencyContactName ?? undefined,
           emergencyContactPhone: normalizedEmergencyPhone ?? undefined,
+          notifyFacilityCode: null,
           commStackAppId: null,
           commStackAppName: null,
           commStackBaseUrl: null,
@@ -237,6 +240,7 @@ export async function POST(request: Request) {
             notes: parsed.data.notes ?? null,
             emergencyContactName: parsed.data.emergencyContactName ?? null,
             emergencyContactPhone: normalizedEmergencyPhone,
+            notifyFacilityCode,
             commStackAppId,
             commStackAppName,
             commStackBaseUrl,
@@ -257,6 +261,7 @@ export async function POST(request: Request) {
             notes: parsed.data.notes ?? null,
             emergencyContactName: parsed.data.emergencyContactName ?? null,
             emergencyContactPhone: normalizedEmergencyPhone,
+            notifyFacilityCode,
             commStackAppId,
             commStackAppName,
             commStackBaseUrl,

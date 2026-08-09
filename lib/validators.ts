@@ -56,6 +56,7 @@ const optionalCommStackAppId = z
   );
 
 const contactCommStackShape = {
+  notifyFacilityCode: z.string().trim().max(120).optional().nullable(),
   commStackAppId: optionalCommStackAppId,
   commStackAppName: optionalCommStackString,
   commStackBaseUrl: optionalCommStackString,
@@ -67,6 +68,7 @@ type ContactIdentityInput = {
   notifyClientId?: string | null;
   notifyChannelId?: string | null;
   name?: string | null;
+  notifyFacilityCode?: string | null;
   commStackAppId?: string | null;
   commStackAppName?: string | null;
   commStackBaseUrl?: string | null;
@@ -103,6 +105,13 @@ function refineNotifyCommStackConfig(data: ContactIdentityInput, ctx: z.Refineme
   const fields = Object.keys(COMM_STACK_FIELD_LABELS) as Array<keyof typeof COMM_STACK_FIELD_LABELS>;
 
   if (hasPhone) {
+    if (data.notifyFacilityCode?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["notifyFacilityCode"],
+        message: "Notify facility code is only allowed for Notify contacts.",
+      });
+    }
     for (const field of fields) {
       if (data[field]?.trim()) {
         ctx.addIssue({
@@ -122,6 +131,14 @@ function refineNotifyCommStackConfig(data: ContactIdentityInput, ctx: z.Refineme
       code: "custom",
       path: ["name"],
       message: "Name is required for Notify contacts.",
+    });
+  }
+
+  if (!data.notifyFacilityCode?.trim()) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["notifyFacilityCode"],
+      message: "Notify facility code is required for Notify contacts.",
     });
   }
 
