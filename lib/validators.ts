@@ -333,3 +333,10 @@ export const createGroupConversationSchema = z.object({
 export const sendGroupMessageSchema = z.object({
   body: z.string().trim().min(1, "Message cannot be empty.").max(1600, "Message is too long."),
 });
+
+export const sendAlertSchema = z.object({
+  conversationId: z.string().uuid(),
+  messageId: z.string().uuid(),
+  room: z.string().trim().min(1).max(40),
+  note: z.string().trim().max(1000).optional().nullable(),
+});
