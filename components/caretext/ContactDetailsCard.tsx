@@ -14,6 +14,7 @@ type Contact = {
   notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  notifyFacilityCode: string | null;
   commStackAppId: string | null;
   commStackAppName: string | null;
   commStackBaseUrl: string | null;
@@ -29,6 +30,7 @@ type ContactFormState = {
   notifyChannelId: string;
   facility: string;
   address: string;
+  notifyFacilityCode: string;
   commStackAppId: string;
   commStackAppName: string;
   commStackBaseUrl: string;
@@ -41,6 +43,7 @@ type NotifyCreatePayload = {
   notifyChannelId?: string;
   facility: string;
   address: string;
+  notifyFacilityCode: string;
   commStackAppId: string;
   commStackAppName: string;
   commStackBaseUrl: string;
@@ -75,6 +78,7 @@ function formFromContact(contact: Contact): ContactFormState {
     notifyChannelId: contact.notifyChannelId ?? "",
     facility: contact.facility ?? "",
     address: contact.address ?? "",
+    notifyFacilityCode: contact.notifyFacilityCode ?? "",
     commStackAppId: contact.commStackAppId ?? "",
     commStackAppName: contact.commStackAppName ?? "",
     commStackBaseUrl: contact.commStackBaseUrl ?? "",
@@ -100,6 +104,7 @@ export function ContactDetailsCard({
     notifyChannelId: "",
     facility: "",
     address: "",
+    notifyFacilityCode: "",
     commStackAppId: "",
     commStackAppName: "",
     commStackBaseUrl: "",
@@ -175,6 +180,7 @@ export function ContactDetailsCard({
               : { notifyChannelId: form.notifyChannelId.trim() }),
             facility: form.facility,
             address: form.address,
+            notifyFacilityCode: form.notifyFacilityCode.trim(),
             commStackAppId: form.commStackAppId.trim(),
             commStackAppName: form.commStackAppName.trim(),
             commStackBaseUrl: form.commStackBaseUrl.trim(),
@@ -201,6 +207,7 @@ export function ContactDetailsCard({
                 phone: form.phone.trim(),
                 notifyClientId: null,
                 notifyChannelId: null,
+                notifyFacilityCode: null,
                 commStackAppId: null,
                 commStackAppName: null,
                 commStackBaseUrl: null,
@@ -212,6 +219,7 @@ export function ContactDetailsCard({
                   form.notifyKind === "individual" ? form.notifyClientId.trim() : null,
                 notifyChannelId:
                   form.notifyKind === "channel" ? form.notifyChannelId.trim() : null,
+                notifyFacilityCode: form.notifyFacilityCode.trim(),
                 commStackAppId: form.commStackAppId.trim(),
                 commStackAppName: form.commStackAppName.trim(),
                 commStackBaseUrl: form.commStackBaseUrl.trim(),
@@ -446,6 +454,20 @@ export function ContactDetailsCard({
                     />
                   </label>
                 )}
+                <label className="block">
+                  <span className="text-xs font-medium text-muted">Notify facility code</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2"
+                    value={form.notifyFacilityCode}
+                    onChange={(event) => updateForm({ notifyFacilityCode: event.target.value })}
+                    placeholder="e.g. deb769"
+                    required={showNotifySettings}
+                    readOnly={!isEditing}
+                  />
+                  <span className="mt-1 block text-xs text-muted">
+                    Used for /palatiumCare/{"{code}"} alerts.
+                  </span>
+                </label>
                 <label className="block">
                   <span className="text-xs font-medium text-muted">COMM_STACK_APP_ID</span>
                   <input

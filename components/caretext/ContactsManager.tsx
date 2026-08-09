@@ -16,6 +16,7 @@ type Contact = {
   notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  notifyFacilityCode: string | null;
   commStackAppId: string | null;
   commStackAppName: string | null;
   commStackBaseUrl: string | null;
@@ -35,6 +36,7 @@ const EMPTY_FORM = {
   facility: "",
   address: "",
   notes: "",
+  notifyFacilityCode: "",
   commStackAppId: "",
   commStackAppName: "",
   commStackBaseUrl: "",
@@ -125,6 +127,7 @@ export function ContactsManager() {
         return;
       }
       if (
+        !form.notifyFacilityCode.trim() ||
         !form.commStackAppId.trim() ||
         !form.commStackAppName.trim() ||
         !form.commStackBaseUrl.trim() ||
@@ -149,6 +152,7 @@ export function ContactsManager() {
                 ...(form.notifyKind === "individual"
                   ? { notifyClientId: form.notifyClientId.trim() }
                   : { notifyChannelId: form.notifyChannelId.trim() }),
+                notifyFacilityCode: form.notifyFacilityCode.trim(),
                 commStackAppId: form.commStackAppId.trim(),
                 commStackAppName: form.commStackAppName.trim(),
                 commStackBaseUrl: form.commStackBaseUrl.trim(),
@@ -207,6 +211,7 @@ export function ContactsManager() {
             (form.notifyKind === "individual"
               ? form.notifyClientId.trim()
               : form.notifyChannelId.trim()) &&
+            form.notifyFacilityCode.trim() &&
             form.commStackAppId.trim() &&
             form.commStackAppName.trim() &&
             form.commStackBaseUrl.trim() &&
@@ -331,6 +336,12 @@ export function ContactsManager() {
               <div className="grid gap-2 sm:grid-cols-2">
                 <input
                   className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Notify facility code (required)"
+                  value={form.notifyFacilityCode}
+                  onChange={(event) => updateField("notifyFacilityCode", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   placeholder="COMM_STACK_APP_ID (required)"
                   value={form.commStackAppId}
                   onChange={(event) => updateField("commStackAppId", event.target.value)}
@@ -421,9 +432,14 @@ export function ContactsManager() {
                 <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
                 <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
                 {contact.notifyClientId || contact.notifyChannelId ? (
-                  <p className="mt-1 text-xs text-muted">
-                    App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
-                  </p>
+                  <>
+                    <p className="text-sm text-muted">
+                      Facility code: {contact.notifyFacilityCode ?? "—"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
+                    </p>
+                  </>
                 ) : null}
                 {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
               </div>

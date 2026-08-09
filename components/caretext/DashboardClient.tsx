@@ -55,6 +55,7 @@ type ConversationListResponse = {
       notes: string | null;
       emergencyContactName: string | null;
       emergencyContactPhone: string | null;
+      notifyFacilityCode: string | null;
       commStackAppId: string | null;
       commStackAppName: string | null;
       commStackBaseUrl: string | null;
@@ -352,6 +353,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       notifyChannelId?: string;
       facility: string;
       address: string;
+      notifyFacilityCode?: string;
       commStackAppId?: string;
       commStackAppName?: string;
       commStackBaseUrl?: string;
@@ -365,6 +367,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           ...(payload.notifyChannelId?.trim()
             ? {
                 notifyChannelId: payload.notifyChannelId.trim(),
+                notifyFacilityCode: payload.notifyFacilityCode?.trim(),
                 commStackAppId: payload.commStackAppId?.trim(),
                 commStackAppName: payload.commStackAppName?.trim(),
                 commStackBaseUrl: payload.commStackBaseUrl?.trim(),
@@ -373,6 +376,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             : payload.notifyClientId?.trim()
               ? {
                   notifyClientId: payload.notifyClientId.trim(),
+                  notifyFacilityCode: payload.notifyFacilityCode?.trim(),
                   commStackAppId: payload.commStackAppId?.trim(),
                   commStackAppName: payload.commStackAppName?.trim(),
                   commStackBaseUrl: payload.commStackBaseUrl?.trim(),
