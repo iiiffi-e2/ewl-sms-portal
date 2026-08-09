@@ -17,7 +17,7 @@ import {
 } from "@/lib/twilio";
 
 type ParticipantLike = { status: "pending_intro" | "active" | "removed" };
-type ContactLike = { name: string | null; phone: string | null };
+type ContactLike = { name: string | null; phone: string | null; notifyClientId?: string | null };
 
 export function countActiveParticipants(participants: ParticipantLike[]): number {
   return participants.filter((p) => p.status === "active").length;
@@ -32,7 +32,7 @@ export function isGroupReadyForMessages(twilioConversationSid: string | null | u
 }
 
 export function buildDefaultGroupTitle(contacts: ContactLike[]): string {
-  const labels = contacts.map((c) => c.name?.trim() || c.phone || "Unknown");
+  const labels = contacts.map((c) => c.name?.trim() || c.phone || c.notifyClientId || "Unknown");
   if (labels.length <= 3) {
     return labels.join(", ");
   }
@@ -105,7 +105,9 @@ export async function maybeActivateTwilioGroup(
         friendlyName: conversation.title ?? "CareText Group",
         messagingServiceSid: getTwilioMessagingServiceSid(),
         participant: [
-          ...active.map((p) => JSON.stringify({ messaging_binding: { address: p.contact.phone } })),
+          ...active
+            .filter((p) => p.contact.phone)
+            .map((p) => JSON.stringify({ messaging_binding: { address: p.contact.phone } })),
           JSON.stringify({ messaging_binding: { projected_address: projectedAddress } }),
         ],
       });
@@ -183,6 +185,10 @@ export async function sendGroupConsentIntro(params: {
     });
     await maybeActivateTwilioGroup(params.conversationId);
     return { ok: true };
+  }
+
+  if (!contact.phone) {
+    return { ok: false, error: "Contact is missing a phone number." };
   }
 
   const queuedMessage = await prisma.message.create({

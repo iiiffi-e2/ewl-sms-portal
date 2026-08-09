@@ -16,6 +16,8 @@ type ConversationComposerAreaProps = {
   isDraft: boolean;
   conversationId?: string;
   consentStatus?: ConsentStatusValue;
+  /** Notify contacts skip SMS consent and message via CommStack. */
+  transport?: "sms" | "notify";
   defaultPhone?: string;
   onPhoneChange?: (phone: string) => void;
   onSend: (payload: { body: string; phone: string; conversationId?: string }) => Promise<void>;
@@ -27,6 +29,7 @@ export function ConversationComposerArea({
   isDraft,
   conversationId,
   consentStatus,
+  transport = "sms",
   defaultPhone,
   onPhoneChange,
   onSend,
@@ -40,16 +43,18 @@ export function ConversationComposerArea({
     );
   }
 
-  if (consentStatus === "opted_out") {
-    return (
-      <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-700">
-        This contact has opted out of SMS messages. You can no longer text them.
-      </div>
-    );
-  }
+  if (transport !== "notify") {
+    if (consentStatus === "opted_out") {
+      return (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-700">
+          This contact has opted out of SMS messages. You can no longer text them.
+        </div>
+      );
+    }
 
-  if (consentStatus !== "opted_in") {
-    return <OptInGate conversationId={conversationId} onIntroSent={onIntroSent} />;
+    if (consentStatus !== "opted_in") {
+      return <OptInGate conversationId={conversationId} onIntroSent={onIntroSent} />;
+    }
   }
 
   return (

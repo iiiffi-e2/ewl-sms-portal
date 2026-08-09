@@ -57,6 +57,17 @@ enum ConversationType {
   group
 }
 
+enum AlertType {
+  Alert
+  Clear
+}
+
+enum AlertStatus {
+  open
+  cleared
+  unmatched
+}
+
 enum ParticipantStatus {
   pending_intro
   active
@@ -119,24 +130,37 @@ model PasswordResetToken {
 model Contact {
   id                       String                    @id @default(uuid())
   name                     String?
-  // Optional: Notify-only contacts have no SMS number.
+  // Exactly one of phone / notifyClientId / notifyChannelId (enforced in app + DB check).
   phone                    String?                   @unique
+  notifyClientId           String?                   @unique
+  notifyChannelId          String?                   @unique
   facility                 String?
   address                  String?
   notes                    String?
   emergencyContactName     String?
   emergencyContactPhone    String?
+  // Per-community CommStack credentials (required for Notify individual or channel).
+  commStackAppId           String?
+  commStackAppName         String?
+  commStackBaseUrl         String?
+  commStackPortalUserId    String?
   consentStatus            ConsentStatus             @default(none)
   consentUpdatedAt         DateTime?
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
+  deletedAt                DateTime?
   conversations            Conversation[]
   conversationParticipants ConversationParticipant[]
   consentEvents            ConsentEvent[]
+  alerts                   Alert[]
 
   @@index([name])
   @@index([phone])
+  @@index([notifyClientId])
+  @@index([notifyChannelId])
   @@index([facility])
+  @@index([commStackAppId])
+  @@index([deletedAt])
 }
 
 model Conversation {
@@ -158,6 +182,7 @@ model Conversation {
   callLogs               CallLog[]
   notes                  InternalNote[]
   participants           ConversationParticipant[]
+  alerts                 Alert[]
 
   @@index([contactId])
   @@index([assignedToId])
@@ -200,6 +225,7 @@ model Message {
   direction             MessageDirection
   status                MessageStatus
   twilioSid             String?          @unique
+  commStackMessageId    String?          @unique
   errorMessage          String?
   isConsentIntro        Boolean          @default(false)
   authorPhone           String?
@@ -217,6 +243,36 @@ model Message {
   // gin_trgm_ops operator class comes from the pg_trgm extension, which is
   // created in migration 20260715000000_add_message_body_trgm_index.
   @@index([body(ops: raw("gin_trgm_ops"))], type: Gin, map: "message_body_trgm_idx")
+}
+
+model Alert {
+  id             String        @id @default(uuid())
+  externalId     String
+  type           AlertType
+  status         AlertStatus   @default(open)
+  eventDateTime  DateTime
+  ackDateTime    DateTime?
+  facilityCode   String?
+  locationName   String?
+  locationBuilding String?
+  residentFirstName String?
+  residentLastName  String?
+  deviceName     String?
+  deviceType     String?
+  payload        Json?
+  contactId      String?
+  conversationId String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  contact        Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@unique([externalId, eventDateTime])
+  @@index([status])
+  @@index([eventDateTime])
+  @@index([contactId])
+  @@index([conversationId])
+  @@index([facilityCode])
 }
 
 model Template {

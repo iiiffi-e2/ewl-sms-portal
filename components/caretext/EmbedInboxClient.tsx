@@ -26,6 +26,7 @@ type ConversationParticipant = {
     id: string;
     name: string | null;
     phone: string | null;
+    notifyClientId?: string | null;
     consentStatus: string;
   };
 };
@@ -42,6 +43,7 @@ type ConversationListResponse = {
       id: string;
       name: string | null;
       phone: string | null;
+      notifyClientId?: string | null;
       facility: string | null;
       address: string | null;
       notes: string | null;
@@ -73,6 +75,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 // Even without new messages, refresh the open thread occasionally so delivery
 // status transitions (sent -> delivered) still surface within a bounded window.
 const DETAIL_SAFETY_REFRESH_MS = 20_000;
+// How often to backfill CommStack history across recent Notify threads (not just
+// the open one). Kept slower than the list poll so we don't stampede CommStack.
+const NOTIFY_INBOX_SYNC_MS = 15_000;
 
 export function EmbedInboxClient({ initialConversationId }: { initialConversationId?: string }) {
   const [search, setSearch] = useState("");
@@ -99,6 +104,8 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
   const conversationsRevisionRef = useRef("");
   const detailLastFetchAtRef = useRef(0);
   const renderedDetailLastMessageIdRef = useRef<string | null>(null);
+  const openNotifyConversationRef = useRef(false);
+  const notifyInboxSyncAtRef = useRef(0);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(
@@ -153,6 +160,10 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
   }, [conversationId]);
 
   useEffect(() => {
+    openNotifyConversationRef.current = Boolean(activeConversation?.contact?.notifyClientId);
+  }, [activeConversation?.contact?.notifyClientId]);
+
+  useEffect(() => {
     void loadTemplates();
   }, [loadTemplates]);
 
@@ -166,6 +177,18 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
         return;
       }
 
+      // Pull inbound Notify DMs for recent Notify threads (open or not) so the
+      // inbox list updates without opening each chat.
+      const now = Date.now();
+      if (now - notifyInboxSyncAtRef.current >= NOTIFY_INBOX_SYNC_MS) {
+        notifyInboxSyncAtRef.current = now;
+        try {
+          await fetch("/api/commstack/sync-inbox", { method: "POST" });
+        } catch {
+          // List poll below still runs; next cycle retries sync.
+        }
+      }
+
       const list = await loadConversations();
 
       if (!conversationId || !list) {
@@ -177,8 +200,13 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       const hasNewMessage =
         newestMessageId !== null && newestMessageId !== renderedDetailLastMessageIdRef.current;
       const safetyElapsed = Date.now() - detailLastFetchAtRef.current >= DETAIL_SAFETY_REFRESH_MS;
+      // Notify inbound often lands via CommStack history sync on detail load, not
+      // the conversations list preview. Keep syncing the open Notify thread each
+      // poll so replies appear without a manual refresh.
+      const isNotifyConversation =
+        Boolean(listConversation?.contact?.notifyClientId) || openNotifyConversationRef.current;
 
-      if (hasNewMessage || safetyElapsed) {
+      if (hasNewMessage || safetyElapsed || isNotifyConversation) {
         detailLastFetchAtRef.current = Date.now();
         void loadConversationDetail(conversationId);
       }

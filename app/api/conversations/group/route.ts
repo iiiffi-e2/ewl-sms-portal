@@ -2,6 +2,7 @@ import { ConsentStatus, ConversationStatus, ConversationType, ParticipantStatus 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
+import { ACTIVE_CONTACT_WHERE } from "@/lib/contact-soft-delete";
 import { buildDefaultGroupTitle, maybeActivateTwilioGroup, sendGroupConsentIntro } from "@/lib/group-conversations";
 import { createGroupConversationSchema } from "@/lib/validators";
 
@@ -19,11 +20,27 @@ export async function POST(request: Request) {
 
   const uniqueContactIds = [...new Set(parsed.data.contactIds)];
   const contacts = await prisma.contact.findMany({
-    where: { id: { in: uniqueContactIds } },
+    where: { id: { in: uniqueContactIds }, ...ACTIVE_CONTACT_WHERE },
   });
 
   if (contacts.length !== uniqueContactIds.length) {
     return NextResponse.json({ error: "One or more contacts were not found." }, { status: 400 });
+  }
+
+  const notifyContacts = contacts.filter((c) => !c.phone);
+  if (notifyContacts.length > 0) {
+    return NextResponse.json(
+      {
+        error: "Notify contacts cannot be added to SMS group conversations.",
+        code: "notify_not_supported_in_groups",
+        contacts: notifyContacts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          notifyClientId: c.notifyClientId,
+        })),
+      },
+      { status: 400 },
+    );
   }
 
   const optedOut = contacts.filter((c) => c.consentStatus === ConsentStatus.opted_out);

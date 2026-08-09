@@ -6,6 +6,7 @@ type ContactOption = {
   id: string;
   name: string | null;
   phone: string | null;
+  notifyClientId?: string | null;
 };
 
 type ConversationOption = {
@@ -158,7 +159,8 @@ export function MessageExportPanel() {
             <option value="">All contacts</option>
             {contactOptions.map((contact) => (
               <option key={contact.id} value={contact.id}>
-                {(contact.name ?? "Unknown") + ` (${contact.phone ?? "no phone"})`}
+                {(contact.name ?? "Unknown") +
+                  ` (${contact.phone ?? contact.notifyClientId ?? "no identity"})`}
               </option>
             ))}
           </select>

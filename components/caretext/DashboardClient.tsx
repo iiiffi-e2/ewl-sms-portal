@@ -10,6 +10,7 @@ import { ConversationComposerArea } from "@/components/caretext/ConversationComp
 import { GroupComposerArea } from "@/components/caretext/GroupComposerArea";
 import { NewGroupConversationModal } from "@/components/caretext/NewGroupConversationModal";
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
+import { AlertsPanel } from "@/components/caretext/AlertsPanel";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
@@ -30,6 +31,7 @@ type ConversationParticipant = {
     id: string;
     name: string | null;
     phone: string | null;
+    notifyClientId?: string | null;
     consentStatus: string;
   };
 };
@@ -46,11 +48,17 @@ type ConversationListResponse = {
       id: string;
       name: string | null;
       phone: string | null;
+      notifyClientId: string | null;
+      notifyChannelId: string | null;
       facility: string | null;
       address: string | null;
       notes: string | null;
       emergencyContactName: string | null;
       emergencyContactPhone: string | null;
+      commStackAppId: string | null;
+      commStackAppName: string | null;
+      commStackBaseUrl: string | null;
+      commStackPortalUserId: string | null;
       consentStatus: "none" | "opted_in" | "opted_out";
     } | null;
     participants?: ConversationParticipant[];
@@ -77,6 +85,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 // Even without new messages, refresh the open thread occasionally so delivery
 // status transitions (sent -> delivered) still surface within a bounded window.
 const DETAIL_SAFETY_REFRESH_MS = 20_000;
+// How often to backfill CommStack history across recent Notify threads (not just
+// the open one). Kept slower than the list poll so we don't stampede CommStack.
+const NOTIFY_INBOX_SYNC_MS = 15_000;
 
 export function DashboardClient({ initialConversationId }: { initialConversationId?: string }) {
   const { data: session } = useSession();
@@ -107,6 +118,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   const conversationsRevisionRef = useRef("");
   const detailLastFetchAtRef = useRef(0);
   const renderedDetailLastMessageIdRef = useRef<string | null>(null);
+  const openNotifyConversationRef = useRef(false);
+  const notifyInboxSyncAtRef = useRef(0);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(
@@ -161,6 +174,16 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   }, [conversationId]);
 
   useEffect(() => {
+    openNotifyConversationRef.current = Boolean(
+      activeConversation?.contact?.notifyClientId ||
+        activeConversation?.contact?.notifyChannelId,
+    );
+  }, [
+    activeConversation?.contact?.notifyClientId,
+    activeConversation?.contact?.notifyChannelId,
+  ]);
+
+  useEffect(() => {
     void loadTemplates();
   }, [loadTemplates]);
 
@@ -174,6 +197,18 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         return;
       }
 
+      // Pull inbound Notify DMs for recent Notify threads (open or not) so the
+      // inbox list / desktop notifications update without opening each chat.
+      const now = Date.now();
+      if (now - notifyInboxSyncAtRef.current >= NOTIFY_INBOX_SYNC_MS) {
+        notifyInboxSyncAtRef.current = now;
+        try {
+          await fetch("/api/commstack/sync-inbox", { method: "POST" });
+        } catch {
+          // List poll below still runs; next cycle retries sync.
+        }
+      }
+
       const list = await loadConversations();
 
       if (!conversationId || !list) {
@@ -185,8 +220,16 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       const hasNewMessage =
         newestMessageId !== null && newestMessageId !== renderedDetailLastMessageIdRef.current;
       const safetyElapsed = Date.now() - detailLastFetchAtRef.current >= DETAIL_SAFETY_REFRESH_MS;
+      // Notify inbound often lands via CommStack history sync on detail load, not
+      // the conversations list preview. Keep syncing the open Notify thread each
+      // poll so replies appear without a manual refresh.
+      const isNotifyConversation =
+        Boolean(
+          listConversation?.contact?.notifyClientId ||
+            listConversation?.contact?.notifyChannelId,
+        ) || openNotifyConversationRef.current;
 
-      if (hasNewMessage || safetyElapsed) {
+      if (hasNewMessage || safetyElapsed || isNotifyConversation) {
         detailLastFetchAtRef.current = Date.now();
         void loadConversationDetail(conversationId);
       }
@@ -241,7 +284,11 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         .map((message) => ({
           ...message,
           contactName: conversation.contact?.name ?? conversation.title ?? null,
-          phone: conversation.contact?.phone ?? "",
+          phone:
+            conversation.contact?.phone ??
+              conversation.contact?.notifyClientId ??
+              conversation.contact?.notifyChannelId ??
+              "",
         })),
     );
 
@@ -272,7 +319,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
     unseenInboundMessages.forEach((message) => {
       const sender = message.contactName?.trim() || message.phone;
-      const notification = new Notification(`New SMS from ${sender}`, {
+      const notification = new Notification(`New message from ${sender}`, {
         body: message.body,
         tag: `inbound-sms-${message.id}`,
       });
@@ -287,19 +334,51 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     () => activeConversation?.contact?.phone ?? draftPhone,
     [activeConversation, draftPhone],
   );
+  const contactTransport =
+    activeConversation?.contact?.notifyClientId ||
+    activeConversation?.contact?.notifyChannelId
+      ? "notify"
+      : "sms";
   const showConversationPane = isNewConversation || Boolean(conversationId);
   const isDraftConversation = isNewConversation && !activeConversation;
   const isAdmin = session?.user.role === "admin";
   const isGroupConversation = activeConversation?.type === "group";
 
   const handleCreateConversation = useCallback(
-    async (payload: { name: string; phone: string; facility: string; address: string }) => {
+    async (payload: {
+      name: string;
+      phone?: string;
+      notifyClientId?: string;
+      notifyChannelId?: string;
+      facility: string;
+      address: string;
+      commStackAppId?: string;
+      commStackAppName?: string;
+      commStackBaseUrl?: string;
+      commStackPortalUserId?: string;
+    }) => {
       const response = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: payload.name.trim() ? payload.name.trim() : null,
-          phone: payload.phone.trim(),
+          ...(payload.notifyChannelId?.trim()
+            ? {
+                notifyChannelId: payload.notifyChannelId.trim(),
+                commStackAppId: payload.commStackAppId?.trim(),
+                commStackAppName: payload.commStackAppName?.trim(),
+                commStackBaseUrl: payload.commStackBaseUrl?.trim(),
+                commStackPortalUserId: payload.commStackPortalUserId?.trim(),
+              }
+            : payload.notifyClientId?.trim()
+              ? {
+                  notifyClientId: payload.notifyClientId.trim(),
+                  commStackAppId: payload.commStackAppId?.trim(),
+                  commStackAppName: payload.commStackAppName?.trim(),
+                  commStackBaseUrl: payload.commStackBaseUrl?.trim(),
+                  commStackPortalUserId: payload.commStackPortalUserId?.trim(),
+                }
+              : { phone: payload.phone?.trim() }),
           facility: payload.facility.trim() ? payload.facility.trim() : null,
           address: payload.address.trim() ? payload.address.trim() : null,
         }),
@@ -409,13 +488,19 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
       let response: Response;
       try {
+        const notifyClientId = activeConversation?.contact?.notifyClientId;
+        const notifyChannelId = activeConversation?.contact?.notifyChannelId;
         response = await fetch("/api/messages/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             body,
-            phone: targetConversationId ? defaultPhone : phone,
             conversationId: targetConversationId,
+            ...(notifyChannelId
+              ? { notifyChannelId }
+              : notifyClientId
+                ? { notifyClientId }
+                : { phone: targetConversationId ? defaultPhone : phone }),
           }),
         });
       } catch (error) {
@@ -566,6 +651,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                   conversationId={activeConversation?.id}
                   contactName={activeConversation?.contact?.name}
                   phone={activeConversation?.contact?.phone}
+                  notifyClientId={activeConversation?.contact?.notifyClientId}
+                  notifyChannelId={activeConversation?.contact?.notifyChannelId}
                   facility={activeConversation?.contact?.facility}
                   status={activeConversation?.status}
                   isDraft={isDraftConversation}
@@ -628,6 +715,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                     isDraft={isDraftConversation}
                     conversationId={activeConversation?.id}
                     consentStatus={activeConversation?.contact?.consentStatus}
+                    transport={contactTransport}
                     defaultPhone={defaultPhone}
                     onPhoneChange={setDraftPhone}
                     onIntroSent={handleIntroSent}
@@ -660,8 +748,17 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 />
                 {activeConversation?.contact?.phone ? (
                   <p className="mt-2 text-sm text-muted">{activeConversation.contact.phone}</p>
+                ) : activeConversation?.contact?.notifyChannelId ? (
+                  <p className="mt-2 text-sm text-muted">
+                    Notify channel: {activeConversation.contact.notifyChannelId}
+                  </p>
+                ) : activeConversation?.contact?.notifyClientId ? (
+                  <p className="mt-2 text-sm text-muted">
+                    Notify: {activeConversation.contact.notifyClientId}
+                  </p>
                 ) : null}
               </div>
+              <AlertsPanel onOpenConversation={handleSelectConversation} />
               <ContactDetailsCard
                 contact={activeConversation?.contact ?? undefined}
                 isDraft={isDraftConversation}
@@ -734,6 +831,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 conversationId={activeConversation?.id}
                 contactName={activeConversation?.contact?.name}
                 phone={activeConversation?.contact?.phone}
+                notifyClientId={activeConversation?.contact?.notifyClientId}
+                notifyChannelId={activeConversation?.contact?.notifyChannelId}
                 facility={activeConversation?.contact?.facility}
                 status={activeConversation?.status}
                 isDraft={isDraftConversation}
@@ -794,6 +893,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                 isDraft={isDraftConversation}
                 conversationId={activeConversation?.id}
                 consentStatus={activeConversation?.contact?.consentStatus}
+                transport={contactTransport}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
                 onIntroSent={handleIntroSent}
@@ -804,6 +904,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           </div>
 
           <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
+            <AlertsPanel onOpenConversation={handleSelectConversation} />
             <ContactDetailsCard
               contact={activeConversation?.contact ?? undefined}
               isDraft={isDraftConversation}

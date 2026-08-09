@@ -73,7 +73,7 @@ export const MessageComposer = memo(function MessageComposer({
             }
           }}
         >
-          {isSending ? "Sending..." : "Send SMS"}
+          {isSending ? "Sending..." : "Send message"}
         </button>
       </div>
     </div>

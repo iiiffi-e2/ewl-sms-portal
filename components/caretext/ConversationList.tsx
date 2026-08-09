@@ -13,6 +13,7 @@ type Conversation = {
   contact: {
     name: string | null;
     phone: string | null;
+    notifyClientId?: string | null;
     consentStatus?: "none" | "opted_in" | "opted_out";
   } | null;
   participants?: { status: string }[];
@@ -52,10 +53,19 @@ export const ConversationList = memo(function ConversationList({
             key={conversation.id}
             id={conversation.id}
             name={conversation.contact?.name ?? ""}
-            phone={conversation.contact?.phone ?? ""}
+            phone={
+              conversation.contact?.phone ??
+              (conversation.contact?.notifyClientId
+                ? `Notify: ${conversation.contact.notifyClientId}`
+                : "")
+            }
             preview={conversation.messages[0]?.body ?? ""}
             status={conversation.status}
-            consentStatus={conversation.contact?.consentStatus}
+            consentStatus={
+              conversation.contact?.notifyClientId
+                ? undefined
+                : conversation.contact?.consentStatus
+            }
             assignedTo={conversation.assignedTo?.name}
             lastMessageAt={conversation.lastMessageAt}
             selected={selectedConversationId === conversation.id}
@@ -83,7 +93,10 @@ export const ConversationList = memo(function ConversationList({
           contactLabel={
             pendingDelete.type === "group"
               ? pendingDelete.title ?? "this group"
-              : pendingDelete.contact?.name ?? pendingDelete.contact?.phone ?? "this conversation"
+              : pendingDelete.contact?.name ??
+                pendingDelete.contact?.phone ??
+                pendingDelete.contact?.notifyClientId ??
+                "this conversation"
           }
           onCancel={() => setPendingDelete(null)}
           onConfirm={async () => {

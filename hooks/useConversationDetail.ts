@@ -23,11 +23,17 @@ export type ConversationDetail = {
     id: string;
     name: string | null;
     phone: string | null;
+    notifyClientId: string | null;
+    notifyChannelId: string | null;
     facility: string | null;
     address: string | null;
     notes: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
+    commStackAppId: string | null;
+    commStackAppName: string | null;
+    commStackBaseUrl: string | null;
+    commStackPortalUserId: string | null;
     consentStatus: "none" | "opted_in" | "opted_out";
   } | null;
   participants?: Array<{
@@ -36,6 +42,7 @@ export type ConversationDetail = {
       id: string;
       name: string | null;
       phone: string | null;
+      notifyClientId?: string | null;
       consentStatus: string;
     };
   }>;
@@ -170,7 +177,34 @@ export function useConversationDetail(initialConversationId?: string) {
         }
 
         const data = await response.json();
-        ingestConversation(data.conversation as ConversationDetail);
+        const conversation = data.conversation as ConversationDetail;
+
+        if (conversation.contact?.notifyClientId || conversation.contact?.notifyChannelId) {
+          try {
+            await fetch(`/api/conversations/${id}/commstack-sync`, {
+              method: "POST",
+              signal: controller.signal,
+            });
+            // Bypass Accelerate so newly imported Notify replies are visible immediately.
+            const refreshed = await fetch(`/api/conversations/${id}?fresh=1`, {
+              signal: controller.signal,
+            });
+            if (refreshed.ok) {
+              const refreshedData = await refreshed.json();
+              ingestConversation(refreshedData.conversation as ConversationDetail, {
+                urgent: true,
+              });
+              return;
+            }
+          } catch (syncError) {
+            if (syncError instanceof DOMException && syncError.name === "AbortError") {
+              return;
+            }
+            // Fall through to show the local thread if CommStack sync fails.
+          }
+        }
+
+        ingestConversation(conversation);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;

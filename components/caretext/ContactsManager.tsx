@@ -1,32 +1,59 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { isValidPhoneNumber } from "@/lib/phone";
 
 type Contact = {
   id: string;
   name: string | null;
   phone: string | null;
+  notifyClientId: string | null;
+  notifyChannelId: string | null;
   facility: string | null;
   address: string | null;
   notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  commStackAppId: string | null;
+  commStackAppName: string | null;
+  commStackBaseUrl: string | null;
+  commStackPortalUserId: string | null;
 };
 
+type Channel = "sms" | "notify";
+type NotifyKind = "individual" | "channel";
+
 const EMPTY_FORM = {
+  channel: "sms" as Channel,
+  notifyKind: "individual" as NotifyKind,
   phone: "",
+  notifyClientId: "",
+  notifyChannelId: "",
   name: "",
   facility: "",
   address: "",
   notes: "",
+  commStackAppId: "",
+  commStackAppName: "",
+  commStackBaseUrl: "",
+  commStackPortalUserId: "",
 };
 
 export function ContactsManager() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [messagingContactId, setMessagingContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const selectedContact = contacts.find((c) => c.id === selectedContactId) ?? null;
 
   const loadContacts = useCallback(async () => {
     const response = await fetch(`/api/contacts${search ? `?q=${encodeURIComponent(search)}` : ""}`);
@@ -38,7 +65,7 @@ export function ContactsManager() {
     void loadContacts();
   }, [loadContacts]);
 
-  function updateField(field: keyof typeof EMPTY_FORM, value: string) {
+  function updateField<K extends keyof typeof EMPTY_FORM>(field: K, value: (typeof EMPTY_FORM)[K]) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -47,11 +74,65 @@ export function ContactsManager() {
     setError(null);
   }
 
+  async function handleSendMessage(contactId: string) {
+    setMessagingContactId(contactId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/contacts/${contactId}/conversation`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(
+          typeof data?.error === "string"
+            ? data.error
+            : "Could not open conversation for this contact.",
+        );
+        return;
+      }
+      if (typeof data?.conversationId !== "string") {
+        setError("Could not open conversation for this contact.");
+        return;
+      }
+      router.push(`/dashboard?conversationId=${data.conversationId}`);
+    } catch (sendError) {
+      setError(
+        sendError instanceof Error ? sendError.message : "Could not open conversation.",
+      );
+    } finally {
+      setMessagingContactId(null);
+    }
+  }
+
   async function handleCreate() {
-    const phone = form.phone.trim();
-    if (!isValidPhoneNumber(phone)) {
-      setError("Enter a valid phone number.");
-      return;
+    if (form.channel === "sms") {
+      const phone = form.phone.trim();
+      if (!isValidPhoneNumber(phone)) {
+        setError("Enter a valid phone number.");
+        return;
+      }
+    } else {
+      if (!form.name.trim()) {
+        setError("Name is required for Notify contacts.");
+        return;
+      }
+      if (form.notifyKind === "individual" && !form.notifyClientId.trim()) {
+        setError("Enter a Notify client UUID.");
+        return;
+      }
+      if (form.notifyKind === "channel" && !form.notifyChannelId.trim()) {
+        setError("Enter a Notify channel UUID.");
+        return;
+      }
+      if (
+        !form.commStackAppId.trim() ||
+        !form.commStackAppName.trim() ||
+        !form.commStackBaseUrl.trim() ||
+        !form.commStackPortalUserId.trim()
+      ) {
+        setError("All CommStack fields are required for Notify contacts.");
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -62,7 +143,17 @@ export function ContactsManager() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone,
+          ...(form.channel === "sms"
+            ? { phone: form.phone.trim() }
+            : {
+                ...(form.notifyKind === "individual"
+                  ? { notifyClientId: form.notifyClientId.trim() }
+                  : { notifyChannelId: form.notifyChannelId.trim() }),
+                commStackAppId: form.commStackAppId.trim(),
+                commStackAppName: form.commStackAppName.trim(),
+                commStackBaseUrl: form.commStackBaseUrl.trim(),
+                commStackPortalUserId: form.commStackPortalUserId.trim(),
+              }),
           name: form.name.trim() || undefined,
           facility: form.facility.trim() || undefined,
           address: form.address.trim() || undefined,
@@ -70,9 +161,11 @@ export function ContactsManager() {
         }),
       });
 
-      if (response.status === 201) {
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
         resetForm();
         setIsFormOpen(false);
+        setSuccess(data?.restored ? "Contact restored" : null);
         await loadContacts();
         return;
       }
@@ -89,6 +182,36 @@ export function ContactsManager() {
       setIsSubmitting(false);
     }
   }
+
+  async function handleDeleteSelected() {
+    if (!selectedContactId) return;
+    const response = await fetch(`/api/contacts/${selectedContactId}`, {
+      method: "DELETE",
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(
+        typeof data?.error === "string" ? data.error : "Could not delete contact.",
+      );
+    }
+    setSelectedContactId(null);
+    setSuccess(null);
+    await loadContacts();
+  }
+
+  const canSave =
+    form.channel === "sms"
+      ? Boolean(form.phone.trim())
+      : Boolean(
+          form.name.trim() &&
+            (form.notifyKind === "individual"
+              ? form.notifyClientId.trim()
+              : form.notifyChannelId.trim()) &&
+            form.commStackAppId.trim() &&
+            form.commStackAppName.trim() &&
+            form.commStackBaseUrl.trim() &&
+            form.commStackPortalUserId.trim(),
+        );
 
   return (
     <section className="space-y-4">
@@ -109,22 +232,90 @@ export function ContactsManager() {
 
         {isFormOpen ? (
           <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  form.channel === "sms"
+                    ? "bg-indigo-600 text-white"
+                    : "border border-border bg-white text-slate-700"
+                }`}
+                onClick={() => updateField("channel", "sms")}
+              >
+                SMS (phone)
+              </button>
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  form.channel === "notify"
+                    ? "bg-indigo-600 text-white"
+                    : "border border-border bg-white text-slate-700"
+                }`}
+                onClick={() => updateField("channel", "notify")}
+              >
+                Notify
+              </button>
+            </div>
+
+            {form.channel === "notify" ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    form.notifyKind === "individual"
+                      ? "bg-slate-800 text-white"
+                      : "border border-border bg-white text-slate-700"
+                  }`}
+                  onClick={() => updateField("notifyKind", "individual")}
+                >
+                  Individual
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    form.notifyKind === "channel"
+                      ? "bg-slate-800 text-white"
+                      : "border border-border bg-white text-slate-700"
+                  }`}
+                  onClick={() => updateField("notifyKind", "channel")}
+                >
+                  Channel
+                </button>
+              </div>
+            ) : null}
+
             <div className="grid gap-2 sm:grid-cols-2">
               <input
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Phone number (required)"
-                value={form.phone}
-                onChange={(event) => updateField("phone", event.target.value)}
-              />
-              <input
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Name (optional)"
+                placeholder={form.channel === "notify" ? "Name (required)" : "Name (optional)"}
                 value={form.name}
                 onChange={(event) => updateField("name", event.target.value)}
               />
+              {form.channel === "sms" ? (
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Phone number (required)"
+                  value={form.phone}
+                  onChange={(event) => updateField("phone", event.target.value)}
+                />
+              ) : form.notifyKind === "individual" ? (
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Notify client UUID (required)"
+                  value={form.notifyClientId}
+                  onChange={(event) => updateField("notifyClientId", event.target.value)}
+                />
+              ) : (
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="Notify channel UUID (required)"
+                  value={form.notifyChannelId}
+                  onChange={(event) => updateField("notifyChannelId", event.target.value)}
+                />
+              )}
               <input
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Facility (optional)"
+                placeholder="Facility name (optional)"
                 value={form.facility}
                 onChange={(event) => updateField("facility", event.target.value)}
               />
@@ -135,6 +326,36 @@ export function ContactsManager() {
                 onChange={(event) => updateField("address", event.target.value)}
               />
             </div>
+
+            {form.channel === "notify" ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_APP_ID (required)"
+                  value={form.commStackAppId}
+                  onChange={(event) => updateField("commStackAppId", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_APP_NAME (required)"
+                  value={form.commStackAppName}
+                  onChange={(event) => updateField("commStackAppName", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_BASE_URL (required)"
+                  value={form.commStackBaseUrl}
+                  onChange={(event) => updateField("commStackBaseUrl", event.target.value)}
+                />
+                <input
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  placeholder="COMM_STACK_PORTAL_USER_ID (required)"
+                  value={form.commStackPortalUserId}
+                  onChange={(event) => updateField("commStackPortalUserId", event.target.value)}
+                />
+              </div>
+            ) : null}
+
             <textarea
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               placeholder="Notes (optional)"
@@ -159,7 +380,7 @@ export function ContactsManager() {
               </button>
               <button
                 type="button"
-                disabled={isSubmitting || !form.phone.trim()}
+                disabled={isSubmitting || !canSave}
                 className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={handleCreate}
               >
@@ -171,22 +392,87 @@ export function ContactsManager() {
 
         <input
           className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm"
-          placeholder="Search name, phone, facility"
+          placeholder="Search name, phone, Notify ID, channel, facility"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      <div className="space-y-2 rounded-xl border border-border bg-white p-4">
-        {contacts.map((contact) => (
-          <div key={contact.id} className="rounded-lg border border-border p-3">
-            <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
-            <p className="text-sm text-muted">{contact.phone ?? "No phone number"}</p>
-            <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
-            <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
-            {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
+      {error && !isFormOpen ? <p className="text-sm text-rose-700">{error}</p> : null}
+      {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-2 rounded-xl border border-border bg-white p-4">
+          {contacts.map((contact) => (
+            <div
+              key={contact.id}
+              className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="min-w-0">
+                <p className="font-semibold">{contact.name ?? "Unknown contact"}</p>
+                <p className="text-sm text-muted">
+                  {contact.phone
+                    ? contact.phone
+                    : contact.notifyChannelId
+                      ? `Notify channel: ${contact.notifyChannelId}`
+                      : contact.notifyClientId
+                        ? `Notify: ${contact.notifyClientId}`
+                        : "No identity"}
+                </p>
+                <p className="text-sm text-muted">{contact.facility ?? "No facility"}</p>
+                <p className="text-sm text-muted">{contact.address ?? "No address"}</p>
+                {contact.notifyClientId || contact.notifyChannelId ? (
+                  <p className="mt-1 text-xs text-muted">
+                    App: {contact.commStackAppName ?? "—"} · {contact.commStackBaseUrl ?? "—"}
+                  </p>
+                ) : null}
+                {contact.notes ? <p className="mt-1 text-sm">{contact.notes}</p> : null}
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                <button
+                  type="button"
+                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
+                  onClick={() => {
+                    setSelectedContactId(contact.id);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  disabled={messagingContactId === contact.id}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  onClick={() => void handleSendMessage(contact.id)}
+                >
+                  {messagingContactId === contact.id ? "Opening..." : "Send Message"}
+                </button>
+              </div>
+            </div>
+          ))}
+          {!contacts.length ? <p className="text-sm text-muted">No contacts found.</p> : null}
+        </div>
+
+        {selectedContact ? (
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                className="text-sm font-medium text-muted underline-offset-2 hover:underline"
+                onClick={() => setSelectedContactId(null)}
+              >
+                Close
+              </button>
+            </div>
+            <ContactDetailsCard
+              contact={selectedContact}
+              onUpdated={async () => {
+                await loadContacts();
+              }}
+              onDelete={handleDeleteSelected}
+            />
           </div>
-        ))}
-        {!contacts.length ? <p className="text-sm text-muted">No contacts found.</p> : null}
+        ) : null}
       </div>
     </section>
   );
