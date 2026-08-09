@@ -30,6 +30,7 @@ export type ConversationDetail = {
     notes: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
+    notifyFacilityCode: string | null;
     commStackAppId: string | null;
     commStackAppName: string | null;
     commStackBaseUrl: string | null;

@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const PREVIEW_MAX_CHARS = 280;
 
 type SendAlertModalProps = {
   open: boolean;
@@ -11,6 +13,13 @@ type SendAlertModalProps = {
   onClose: () => void;
   onSent: () => void;
 };
+
+function truncatePreview(text: string): string {
+  if (text.length <= PREVIEW_MAX_CHARS) {
+    return text;
+  }
+  return `${text.slice(0, PREVIEW_MAX_CHARS)}…`;
+}
 
 export function SendAlertModal({
   open,
@@ -26,10 +35,24 @@ export function SendAlertModal({
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+        closeTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) {
       return;
+    }
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
     }
     setRoom(initialRoom);
     setNote("");
@@ -43,6 +66,7 @@ export function SendAlertModal({
   }
 
   const canSubmit = room.trim().length > 0 && !isSending && !success;
+  const preview = truncatePreview(sourceMessagePreview);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
@@ -52,8 +76,8 @@ export function SendAlertModal({
           Send a Notify alert for this message. Room is required; note is optional and stays in
           CareText only.
         </p>
-        <p className="mt-3 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
-          {sourceMessagePreview}
+        <p className="mt-3 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap break-words">
+          {preview}
         </p>
 
         <label className="mt-4 block text-sm font-medium text-slate-900">
@@ -130,7 +154,11 @@ export function SendAlertModal({
 
                 setSuccess(true);
                 onSent();
-                window.setTimeout(() => {
+                if (closeTimeoutRef.current) {
+                  clearTimeout(closeTimeoutRef.current);
+                }
+                closeTimeoutRef.current = setTimeout(() => {
+                  closeTimeoutRef.current = null;
                   onClose();
                 }, 900);
               } catch (sendError) {
