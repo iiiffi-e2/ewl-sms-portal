@@ -66,6 +66,8 @@ enum AlertStatus {
   open
   cleared
   unmatched
+  sent
+  failed
 }
 
 enum ParticipantStatus {
@@ -135,6 +137,7 @@ model Contact {
   notifyClientId           String?                   @unique
   notifyChannelId          String?                   @unique
   facility                 String?
+  notifyFacilityCode       String?
   address                  String?
   notes                    String?
   emergencyContactName     String?
@@ -262,6 +265,9 @@ model Alert {
   payload        Json?
   contactId      String?
   conversationId String?
+  sourceMessageId String?
+  note            String?
+  errorMessage    String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   contact        Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -273,6 +279,7 @@ model Alert {
   @@index([contactId])
   @@index([conversationId])
   @@index([facilityCode])
+  @@index([sourceMessageId])
 }
 
 model Template {
