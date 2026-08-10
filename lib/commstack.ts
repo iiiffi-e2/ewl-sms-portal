@@ -249,7 +249,7 @@ export async function ensureCommStackUser(
 export async function ensurePortalCommStackUser(config: ContactCommStackConfig): Promise<void> {
   await ensureCommStackUser(config, {
     userId: config.portalUserId,
-    name: "EyeWatch LIVE®",
+    name: "EyeWatch LIVE",
   });
 }
 
@@ -380,7 +380,7 @@ export async function sendCommStackDirectMessage(
   const ack = await comms.messages.sendDirect({
     receiver: input.receiverUserId.trim(),
     sender: config.portalUserId,
-    senderName: input.senderName ?? "EyeWatch LIVE®",
+    senderName: input.senderName ?? "EyeWatch LIVE",
     text: input.text,
   });
 
@@ -409,7 +409,7 @@ export async function sendCommStackChannelMessage(
   const ack = await comms.messages.sendToChannel({
     channelId: input.channelId.trim(),
     sender: config.portalUserId,
-    senderName: input.senderName ?? "EyeWatch LIVE®",
+    senderName: input.senderName ?? "EyeWatch LIVE",
     text: input.text,
   });
 

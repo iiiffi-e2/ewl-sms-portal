@@ -217,7 +217,7 @@ export async function POST(request: Request) {
         console.error("[commstack] realtime ensure-all-on-send failed", error);
       });
 
-      const senderName = "EyeWatch LIVE®";
+      const senderName = "EyeWatch LIVE";
       const result = contact.notifyChannelId
         ? await sendCommStackChannelMessage(config, {
             channelId: contact.notifyChannelId,

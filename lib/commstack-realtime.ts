@@ -237,7 +237,7 @@ async function startConnection(config: ContactCommStackConfig): Promise<void> {
     const connectAsPortal = async () => {
       await comms.realtime.connect({
         userId: config.portalUserId,
-        userName: "EyeWatch LIVE®",
+        userName: "EyeWatch LIVE",
       });
       state!.connected = Boolean(comms.realtime.connected);
       if (state!.connected) {
