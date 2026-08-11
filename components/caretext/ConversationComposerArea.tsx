@@ -21,6 +21,11 @@ type ConversationComposerAreaProps = {
   defaultPhone?: string;
   onPhoneChange?: (phone: string) => void;
   onSend: (payload: { body: string; phone: string; conversationId?: string }) => Promise<void>;
+  onSendVoice?: (payload: {
+    conversationId: string;
+    blob: Blob;
+    durationSeconds: number;
+  }) => Promise<void>;
   onIntroSent: () => Promise<void> | void;
 };
 
@@ -33,6 +38,7 @@ export function ConversationComposerArea({
   defaultPhone,
   onPhoneChange,
   onSend,
+  onSendVoice,
   onIntroSent,
 }: ConversationComposerAreaProps) {
   if (isDraft || !conversationId) {
@@ -64,6 +70,8 @@ export function ConversationComposerArea({
       defaultPhone={defaultPhone}
       onPhoneChange={onPhoneChange}
       onSend={onSend}
+      enableVoice={transport === "notify"}
+      onSendVoice={onSendVoice}
     />
   );
 }
