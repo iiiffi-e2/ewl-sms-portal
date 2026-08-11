@@ -15,6 +15,9 @@ type Message = {
   createdAt: string;
   authorPhone?: string | null;
   isSystemNote?: boolean;
+  messageType?: "text" | "voice" | "photo" | "pdf";
+  durationSeconds?: number | null;
+  hasAttachment?: boolean;
 };
 
 type DisplayMessage = Message & {
@@ -317,6 +320,10 @@ export const MessageThread = memo(function MessageThread({
                 status={item.message.status}
                 createdAt={item.message.createdAt}
                 reactions={item.message.reactionEmojis}
+                messageType={item.message.messageType}
+                durationSeconds={item.message.durationSeconds}
+                hasAttachment={item.message.hasAttachment}
+                messageId={item.message.id}
                 inboundClassName={
                   isGroup && item.message.direction === "inbound"
                     ? resolveSenderColor(item.message.authorPhone).bubble
