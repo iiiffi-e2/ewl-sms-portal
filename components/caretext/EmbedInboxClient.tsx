@@ -476,7 +476,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
                     createdAt: new Date().toISOString(),
                     messageType: "voice" as const,
                     durationSeconds,
-                    hasAttachment: true,
+                    hasAttachment: false,
                   },
                 ],
               }

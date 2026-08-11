@@ -1,5 +1,7 @@
 export const VOICE_MESSAGE_BODY = "Voice message";
 export const VOICE_MAX_DURATION_SECONDS = 120;
+/** CommStack attachment upload limit. */
+export const VOICE_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const VOICE_CONTENT_TYPE = "audio/mp4";
 export const VOICE_FILENAME = "note.m4a";
 

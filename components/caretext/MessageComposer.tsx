@@ -59,6 +59,14 @@ export const MessageComposer = memo(function MessageComposer({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const recordGenerationRef = useRef(0);
+  const conversationIdRef = useRef(conversationId);
+  const enableVoiceRef = useRef(enableVoice);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+    enableVoiceRef.current = enableVoice;
+  }, [conversationId, enableVoice]);
 
   useEffect(() => {
     if (defaultPhone !== undefined) {
@@ -118,6 +126,7 @@ export const MessageComposer = memo(function MessageComposer({
   };
 
   useEffect(() => {
+    recordGenerationRef.current += 1;
     resetVoiceState();
   }, [conversationId, enableVoice]);
 
@@ -158,8 +167,23 @@ export const MessageComposer = memo(function MessageComposer({
       return;
     }
 
+    const generation = ++recordGenerationRef.current;
+    const startedConversationId = conversationId;
+    const startedEnableVoice = enableVoice;
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      if (
+        generation !== recordGenerationRef.current ||
+        conversationIdRef.current !== startedConversationId ||
+        enableVoiceRef.current !== startedEnableVoice ||
+        !enableVoiceRef.current
+      ) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       mediaStreamRef.current = stream;
       chunksRef.current = [];
 

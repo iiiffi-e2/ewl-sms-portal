@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import {
   VOICE_CONTENT_TYPE,
   VOICE_FILENAME,
+  VOICE_MAX_UPLOAD_BYTES,
   VOICE_MESSAGE_BODY,
   assertValidVoiceDuration,
   serializeMessageForClient,
@@ -44,6 +45,15 @@ export async function POST(request: Request) {
 
   if (!(audio instanceof File) || audio.size === 0) {
     return NextResponse.json({ error: "audio file is required." }, { status: 400 });
+  }
+
+  if (audio.size > VOICE_MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      {
+        error: `Audio file exceeds the ${VOICE_MAX_UPLOAD_BYTES / (1024 * 1024)} MB CommStack upload limit.`,
+      },
+      { status: 413 },
+    );
   }
 
   const duration = Number(durationRaw);
