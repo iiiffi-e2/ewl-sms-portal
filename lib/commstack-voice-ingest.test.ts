@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  outboundEchoContactLookup,
   outboundEchoMatchFilter,
   resolveInboundMessageFields,
   voiceAttachmentFilename,
@@ -72,5 +73,17 @@ describe("commstack-voice-ingest helpers", () => {
     expect(
       outboundEchoMatchFilter({ type: "text", text: "  ", file: "" }),
     ).toBeNull();
+  });
+
+  it("scopes outbound echo contact lookup by channel or receiver", () => {
+    expect(
+      outboundEchoContactLookup({ channel_id: "ch-1", receiver: "user-2" }),
+    ).toEqual({ notifyChannelId: "ch-1" });
+
+    expect(
+      outboundEchoContactLookup({ channel_id: null, receiver: "user-2" }),
+    ).toEqual({ notifyClientId: "user-2" });
+
+    expect(outboundEchoContactLookup({ channel_id: "  ", receiver: "  " })).toBeNull();
   });
 });

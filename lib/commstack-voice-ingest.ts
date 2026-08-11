@@ -74,6 +74,23 @@ export function outboundEchoMatchFilter(item: {
   return { body };
 }
 
+/** Resolve which contact identity an outbound realtime echo belongs to. */
+export function outboundEchoContactLookup(message: {
+  channel_id?: string | null;
+  receiver?: string | null;
+}):
+  | { notifyChannelId: string }
+  | { notifyClientId: string }
+  | null {
+  const channelId = message.channel_id?.trim();
+  if (channelId) return { notifyChannelId: channelId };
+
+  const receiver = message.receiver?.trim();
+  if (receiver) return { notifyClientId: receiver };
+
+  return null;
+}
+
 async function tryCreateVoiceAttachment(
   config: ContactCommStackConfig,
   messageId: string,

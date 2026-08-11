@@ -14,6 +14,7 @@ import {
   type ContactCommStackConfig,
 } from "@/lib/commstack";
 import {
+  outboundEchoContactLookup,
   outboundEchoMatchFilter,
   persistInboundCommStackMessage,
 } from "@/lib/commstack-voice-ingest";
@@ -49,6 +50,36 @@ function toIngestItem(message: RealtimeMessage, messageId: string, sender: strin
   };
 }
 
+async function resolveConversationIdForOutboundEcho(
+  message: RealtimeMessage,
+): Promise<string | null> {
+  const lookup = outboundEchoContactLookup(message);
+  if (!lookup) return null;
+
+  const contact =
+    "notifyChannelId" in lookup
+      ? await prisma.contact.findUnique({
+          where: { notifyChannelId: lookup.notifyChannelId },
+          select: { id: true },
+        })
+      : await prisma.contact.findUnique({
+          where: { notifyClientId: lookup.notifyClientId },
+          select: { id: true },
+        });
+  if (!contact) return null;
+
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      contactId: contact.id,
+      status: { not: ConversationStatus.closed },
+      archivedAt: null,
+    },
+    orderBy: { lastMessageAt: "desc" },
+    select: { id: true },
+  });
+  return conversation?.id ?? null;
+}
+
 async function attachOutboundEcho(
   messageId: string,
   message: RealtimeMessage,
@@ -60,8 +91,12 @@ async function attachOutboundEcho(
   });
   if (!echoMatch) return false;
 
+  const conversationId = await resolveConversationIdForOutboundEcho(message);
+  if (!conversationId) return false;
+
   const orphan = await prisma.message.findFirst({
     where: {
+      conversationId,
       direction: MessageDirection.outbound,
       body: echoMatch.body,
       ...("messageType" in echoMatch && echoMatch.messageType === "voice"
