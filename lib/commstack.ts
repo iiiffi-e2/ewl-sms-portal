@@ -38,6 +38,8 @@ type CommStackMessage = {
   messageId: string;
   type: string;
   text: string;
+  file: string;
+  duration: number;
   sender: string;
   senderName?: string | null;
   receiver?: string | null;
@@ -166,33 +168,42 @@ export function getContactCommStackConfig(contact: ContactCommStackFields): Cont
   };
 }
 
-function clientCacheKey(config: Pick<ContactCommStackConfig, "baseUrl" | "appId">): string {
-  return `${config.baseUrl}|${config.appId}`;
+function clientCacheKey(
+  config: Pick<ContactCommStackConfig, "baseUrl" | "appId">,
+  timeoutMs?: number,
+): string {
+  const base = `${config.baseUrl}|${config.appId}`;
+  return timeoutMs != null ? `${base}|t${timeoutMs}` : base;
 }
 
 const rootClients = new Map<string, CommStack>();
 const scopedClients = new Map<string, CommStack>();
 
-function getRootClient(config: ContactCommStackConfig): CommStack {
-  const key = config.baseUrl;
+function getRootClient(config: ContactCommStackConfig, timeoutMs?: number): CommStack {
+  const timeout = timeoutMs ?? Number(readEnv("COMM_STACK_TIMEOUT_MS") ?? 15000);
+  const key = timeoutMs != null ? `${config.baseUrl}|t${timeout}` : config.baseUrl;
   let client = rootClients.get(key);
   if (!client) {
     client = new CommStack({
       baseUrl: config.baseUrl,
       env: config.env,
-      timeout: Number(readEnv("COMM_STACK_TIMEOUT_MS") ?? 15000),
+      timeout,
     });
     rootClients.set(key, client);
   }
   return client;
 }
 
-export async function getScopedCommStackClient(config: ContactCommStackConfig): Promise<CommStack> {
-  const key = clientCacheKey(config);
+export async function getScopedCommStackClient(
+  config: ContactCommStackConfig,
+  options?: { timeoutMs?: number },
+): Promise<CommStack> {
+  const timeoutMs = options?.timeoutMs;
+  const key = clientCacheKey(config, timeoutMs);
   let scoped = scopedClients.get(key);
   if (scoped) return scoped;
 
-  const root = getRootClient(config);
+  const root = getRootClient(config, timeoutMs);
   scoped = root.forApplication(config.appId);
   scopedClients.set(key, scoped);
   return scoped;
@@ -416,6 +427,92 @@ export async function sendCommStackChannelMessage(
   return { messageId: String(ack.ackId) };
 }
 
+function voiceUploadTimeoutMs(): number {
+  return Math.max(Number(process.env.COMM_STACK_TIMEOUT_MS ?? 15000), 60000);
+}
+
+export async function downloadCommStackAttachment(
+  config: ContactCommStackConfig,
+  file: string,
+): Promise<Buffer> {
+  const comms = await getScopedCommStackClient(config);
+  return comms.messages.download(file);
+}
+
+export async function sendCommStackDirectVoice(
+  config: ContactCommStackConfig,
+  input: {
+    receiverUserId: string;
+    data: Buffer;
+    filename: string;
+    contentType: string;
+    duration: number;
+    senderName?: string | null;
+  },
+): Promise<{ messageId: string }> {
+  const comms = await getScopedCommStackClient(config, {
+    timeoutMs: voiceUploadTimeoutMs(),
+  });
+
+  await ensureCommStackUser(config, { userId: input.receiverUserId });
+  await ensurePortalCommStackUser(config);
+
+  const ack = await comms.messages.sendDirect({
+    receiver: input.receiverUserId.trim(),
+    sender: config.portalUserId,
+    senderName: input.senderName ?? "EyeWatch LIVE",
+    type: "voice",
+    duration: input.duration,
+    file: {
+      data: input.data,
+      filename: input.filename,
+      contentType: input.contentType,
+    },
+  });
+
+  return { messageId: String(ack.ackId) };
+}
+
+export async function sendCommStackChannelVoice(
+  config: ContactCommStackConfig,
+  input: {
+    channelId: string;
+    data: Buffer;
+    filename: string;
+    contentType: string;
+    duration: number;
+    senderName?: string | null;
+  },
+): Promise<{ messageId: string }> {
+  if (!isCommStackUserId(input.channelId)) {
+    throw new CommStackError(
+      "INVALID_REQUEST",
+      "Notify channel ID must be a valid UUID.",
+      { fields: ["channelId"] },
+    );
+  }
+
+  const comms = await getScopedCommStackClient(config, {
+    timeoutMs: voiceUploadTimeoutMs(),
+  });
+  await ensurePortalCommStackUser(config);
+
+  const ack = await comms.messages.sendToChannel({
+    channelId: input.channelId.trim(),
+    sender: config.portalUserId,
+    senderName: input.senderName ?? "EyeWatch LIVE",
+    type: "voice",
+    duration: input.duration,
+    file: {
+      data: input.data,
+      filename: input.filename,
+      contentType: input.contentType,
+    },
+  });
+
+  return { messageId: String(ack.ackId) };
+}
+
 export async function fetchCommStackDirectHistory(
   config: ContactCommStackConfig,
   input: {
@@ -436,6 +533,8 @@ export async function fetchCommStackDirectHistory(
     messageId: String(item.messageId),
     type: item.type,
     text: item.text,
+    file: String(item.file ?? ""),
+    duration: Number(item.duration ?? 0),
     sender: item.sender,
     senderName: item.senderName,
     receiver: item.receiver,
@@ -465,6 +564,8 @@ export async function fetchCommStackChannelHistory(
     messageId: String(item.messageId),
     type: item.type,
     text: item.text,
+    file: String(item.file ?? ""),
+    duration: Number(item.duration ?? 0),
     sender: item.sender,
     senderName: item.senderName,
     receiver: item.receiver,
