@@ -322,6 +322,7 @@ export const MessageComposer = memo(function MessageComposer({
             {enableVoice ? (
               <button
                 type="button"
+                data-testid="record-voice-note"
                 aria-label="Record voice note"
                 title="Record voice note"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
