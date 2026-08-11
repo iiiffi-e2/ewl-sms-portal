@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeCommStackUploadFile,
+  normalizeVoiceDurationSeconds,
   outboundEchoContactLookup,
   outboundEchoMatchFilter,
   resolveInboundMessageFields,
@@ -15,6 +17,20 @@ describe("commstack-voice-ingest helpers", () => {
     expect(voiceAttachmentFilename("   ")).toBe(VOICE_FILENAME);
   });
 
+  it("strips /uploads/ prefix for SDK download keys", () => {
+    expect(normalizeCommStackUploadFile("/uploads/abc.m4a")).toBe("abc.m4a");
+    expect(normalizeCommStackUploadFile("uploads/abc.m4a")).toBe("abc.m4a");
+    expect(normalizeCommStackUploadFile("abc.m4a")).toBe("abc.m4a");
+    expect(normalizeCommStackUploadFile("  ")).toBe("");
+  });
+
+  it("normalizes millisecond voice durations to seconds", () => {
+    expect(normalizeVoiceDurationSeconds(12)).toBe(12);
+    expect(normalizeVoiceDurationSeconds(12000)).toBe(12);
+    expect(normalizeVoiceDurationSeconds(0)).toBeNull();
+    expect(normalizeVoiceDurationSeconds(null)).toBeNull();
+  });
+
   it("resolves voice vs text inbound message fields", () => {
     expect(
       resolveInboundMessageFields({
@@ -22,6 +38,19 @@ describe("commstack-voice-ingest helpers", () => {
         text: "",
         file: "a.m4a",
         duration: 12,
+      }),
+    ).toEqual({
+      messageType: "voice",
+      body: VOICE_MESSAGE_BODY,
+      durationSeconds: 12,
+    });
+
+    expect(
+      resolveInboundMessageFields({
+        type: "voice",
+        text: "",
+        file: "/uploads/a.m4a",
+        duration: 12000,
       }),
     ).toEqual({
       messageType: "voice",

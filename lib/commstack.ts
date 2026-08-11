@@ -436,7 +436,10 @@ export async function downloadCommStackAttachment(
   file: string,
 ): Promise<Buffer> {
   const comms = await getScopedCommStackClient(config);
-  return comms.messages.download(file);
+  // History/realtime may return `/uploads/<name>`; SDK download already
+  // prefixes `/messages/uploads/`, so strip a leading uploads/ segment.
+  const key = file.trim().replace(/^\/?uploads\//i, "");
+  return comms.messages.download(key);
 }
 
 export async function sendCommStackDirectVoice(

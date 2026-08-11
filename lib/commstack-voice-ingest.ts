@@ -34,6 +34,26 @@ export function voiceAttachmentFilename(file: string): string {
   return base || VOICE_FILENAME;
 }
 
+/**
+ * History/realtime often return `file` as `/uploads/<name>`. The SDK download
+ * call already prefixes `/messages/uploads/`, so pass only the bare filename.
+ */
+export function normalizeCommStackUploadFile(file: string): string {
+  const trimmed = file.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.replace(/^\/?uploads\//i, "");
+}
+
+/** Notify sometimes reports voice duration in milliseconds. */
+export function normalizeVoiceDurationSeconds(
+  duration: number | null | undefined,
+): number | null {
+  const raw = Number(duration ?? 0);
+  if (!Number.isFinite(raw) || raw <= 0) return null;
+  const seconds = raw >= 1000 ? Math.round(raw / 1000) : Math.round(raw);
+  return seconds > 0 ? seconds : null;
+}
+
 export function resolveInboundMessageFields(item: {
   type?: string | null;
   text?: string | null;
@@ -45,11 +65,10 @@ export function resolveInboundMessageFields(item: {
   durationSeconds: number | null;
 } {
   if (isVoiceCommStackMessage(item)) {
-    const duration = Number(item.duration ?? 0);
     return {
       messageType: "voice",
       body: item.text?.trim() || VOICE_MESSAGE_BODY,
-      durationSeconds: duration || null,
+      durationSeconds: normalizeVoiceDurationSeconds(item.duration),
     };
   }
 
@@ -96,8 +115,11 @@ async function tryCreateVoiceAttachment(
   messageId: string,
   file: string,
 ): Promise<void> {
+  const downloadKey = normalizeCommStackUploadFile(file);
+  if (!downloadKey) return;
+
   try {
-    const downloaded = await downloadCommStackAttachment(config, file);
+    const downloaded = await downloadCommStackAttachment(config, downloadKey);
     const bytes = Uint8Array.from(downloaded);
     await prisma.messageAttachment.create({
       data: {
@@ -106,13 +128,14 @@ async function tryCreateVoiceAttachment(
         contentType: VOICE_CONTENT_TYPE,
         filename: voiceAttachmentFilename(file),
         sizeBytes: bytes.byteLength,
-        commStackFile: file,
+        // Store the key we actually download with (bare filename).
+        commStackFile: downloadKey,
       },
     });
   } catch (error) {
     console.error(
       "[commstack] failed to download/store voice attachment",
-      file,
+      { file, downloadKey },
       error,
     );
   }
