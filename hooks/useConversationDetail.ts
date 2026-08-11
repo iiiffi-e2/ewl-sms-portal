@@ -11,6 +11,9 @@ type ConversationMessage = {
   createdAt: string;
   authorPhone?: string | null;
   isSystemNote?: boolean;
+  messageType?: "text" | "voice" | "photo" | "pdf";
+  durationSeconds?: number | null;
+  hasAttachment?: boolean;
 };
 
 export type ConversationDetail = {

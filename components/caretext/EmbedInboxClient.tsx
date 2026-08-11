@@ -13,6 +13,8 @@ import { EmbedNewConversationForm } from "@/components/caretext/EmbedNewConversa
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { useConversationDetail } from "@/hooks/useConversationDetail";
 import { getConversationsListRevision } from "@/lib/conversation-revision";
+import { VOICE_MESSAGE_BODY } from "@/lib/voice-messages";
+import { createVoiceSendFormData } from "@/lib/voice-recorder";
 
 type Template = {
   id: string;
@@ -246,6 +248,11 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     () => activeConversation?.contact?.phone ?? draftPhone,
     [activeConversation, draftPhone],
   );
+  const contactTransport =
+    activeConversation?.contact?.notifyClientId ||
+    activeConversation?.contact?.notifyChannelId
+      ? "notify"
+      : "sms";
   const showConversationPane = isNewConversation || Boolean(conversationId);
   const isDraftConversation = isNewConversation && !activeConversation;
   const isGroupConversation = activeConversation?.type === "group";
@@ -427,6 +434,117 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
     ],
   );
 
+  const handleSendVoice = useCallback(
+    async ({
+      conversationId: targetConversationId,
+      blob,
+      durationSeconds,
+    }: {
+      conversationId: string;
+      blob: Blob;
+      durationSeconds: number;
+    }) => {
+      const optimisticId =
+        activeConversation?.id === targetConversationId
+          ? `optimistic-${crypto.randomUUID()}`
+          : null;
+
+      const removeOptimistic = () => {
+        if (!optimisticId) return;
+        updateActiveConversation((current) =>
+          current.id === targetConversationId
+            ? {
+                ...current,
+                messages: current.messages.filter((message) => message.id !== optimisticId),
+              }
+            : current,
+        );
+      };
+
+      if (optimisticId) {
+        updateActiveConversation((current) =>
+          current.id === targetConversationId
+            ? {
+                ...current,
+                messages: [
+                  ...current.messages,
+                  {
+                    id: optimisticId,
+                    body: VOICE_MESSAGE_BODY,
+                    direction: "outbound" as const,
+                    status: "sending",
+                    createdAt: new Date().toISOString(),
+                    messageType: "voice" as const,
+                    durationSeconds,
+                    hasAttachment: false,
+                  },
+                ],
+              }
+            : current,
+        );
+      }
+
+      let response: Response;
+      try {
+        response = await fetch("/api/messages/send-voice", {
+          method: "POST",
+          body: createVoiceSendFormData({
+            conversationId: targetConversationId,
+            durationSeconds,
+            blob,
+          }),
+        });
+      } catch (error) {
+        removeOptimistic();
+        throw error instanceof Error ? error : new Error("Failed to send voice note.");
+      }
+
+      if (!response.ok) {
+        removeOptimistic();
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error ?? "Failed to send voice note.");
+      }
+
+      const data = await response.json();
+
+      if (optimisticId && data.message) {
+        updateActiveConversation((current) =>
+          current.id === targetConversationId
+            ? {
+                ...current,
+                messages: current.messages.map((message) =>
+                  message.id === optimisticId
+                    ? {
+                        id: data.message.id,
+                        body: data.message.body,
+                        direction: "outbound" as const,
+                        status: data.message.status,
+                        createdAt: data.message.createdAt,
+                        messageType: data.message.messageType ?? "voice",
+                        durationSeconds:
+                          data.message.durationSeconds ?? durationSeconds,
+                        hasAttachment: data.message.hasAttachment ?? true,
+                      }
+                    : message,
+                ),
+              }
+            : current,
+        );
+      }
+
+      await Promise.all([
+        loadConversations(),
+        loadConversationDetail(targetConversationId),
+      ]);
+    },
+    [
+      activeConversation,
+      loadConversations,
+      loadConversationDetail,
+      updateActiveConversation,
+    ],
+  );
+
   const handleIntroSent = useCallback(async () => {
     if (!activeConversation) return;
     await loadConversationDetail(activeConversation.id);
@@ -512,10 +630,12 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
                 isDraft={false}
                 conversationId={activeConversation?.id}
                 consentStatus={activeConversation?.contact?.consentStatus}
+                transport={contactTransport}
                 defaultPhone={defaultPhone}
                 onPhoneChange={setDraftPhone}
                 onIntroSent={handleIntroSent}
                 onSend={handleSendMessage}
+                onSendVoice={handleSendVoice}
               />
             )}
           </div>

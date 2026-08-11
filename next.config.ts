@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["ffmpeg-static"],
+  outputFileTracingIncludes: {
+    "/api/messages/send-voice": ["./node_modules/ffmpeg-static/**/*"],
+  },
 };
 
 export default nextConfig;

@@ -37,6 +37,13 @@ enum MessageStatus {
   received
 }
 
+enum MessageType {
+  text
+  voice
+  photo
+  pdf
+}
+
 enum ConsentStatus {
   none
   opted_in
@@ -222,6 +229,8 @@ model Message {
   conversationId        String
   userId                String?
   body                  String
+  messageType           MessageType      @default(text)
+  durationSeconds       Int?
   direction             MessageDirection
   status                MessageStatus
   twilioSid             String?          @unique
@@ -236,6 +245,7 @@ model Message {
   conversation          Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user                  User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   consentEvents         ConsentEvent[]
+  attachment            MessageAttachment?
 
   @@index([conversationId, createdAt])
   @@index([status])
@@ -243,6 +253,21 @@ model Message {
   // gin_trgm_ops operator class comes from the pg_trgm extension, which is
   // created in migration 20260715000000_add_message_body_trgm_index.
   @@index([body(ops: raw("gin_trgm_ops"))], type: Gin, map: "message_body_trgm_idx")
+}
+
+model MessageAttachment {
+  id            String   @id @default(uuid())
+  messageId     String   @unique
+  bytes         Bytes
+  contentType   String
+  filename      String
+  sizeBytes     Int
+  commStackFile String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  message       Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
 }
 
 model Alert {
