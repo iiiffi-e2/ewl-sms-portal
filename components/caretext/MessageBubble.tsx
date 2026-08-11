@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { memo } from "react";
-import { formatCallDuration } from "@/lib/call-log-display";
+import { VoiceMessagePlayer } from "@/components/caretext/VoiceMessagePlayer";
 import { formatMessageTime } from "@/lib/format";
 
 type MessageBubbleProps = {
@@ -31,14 +31,13 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const outbound = direction === "outbound";
   const isVoice = messageType === "voice";
-  const durationLabel = formatCallDuration(durationSeconds ?? null);
 
   return (
     <div className={clsx("flex", outbound ? "justify-end" : "justify-start")}>
       <div className={clsx("relative max-w-[85%] sm:max-w-[70%]", outbound ? "pr-1" : "pl-1")}>
         <div
           className={clsx(
-            "rounded-2xl px-4 py-2 shadow-sm",
+            "rounded-2xl px-4 py-2.5 shadow-sm",
             outbound
               ? "bg-indigo-600 text-white"
               : (inboundClassName ?? "bg-white border border-border text-foreground"),
@@ -46,26 +45,13 @@ export const MessageBubble = memo(function MessageBubble({
         >
           {isVoice ? (
             hasAttachment && messageId ? (
-              <div className="space-y-1">
-                <audio
-                  controls
-                  preload="metadata"
-                  src={`/api/messages/${messageId}/attachment`}
-                  className="max-w-full"
-                />
-                {durationLabel ? (
-                  <p
-                    className={clsx(
-                      "text-xs",
-                      outbound ? "text-indigo-100" : "text-muted",
-                    )}
-                  >
-                    {durationLabel}
-                  </p>
-                ) : null}
-              </div>
+              <VoiceMessagePlayer
+                src={`/api/messages/${messageId}/attachment`}
+                durationSeconds={durationSeconds}
+                tone={outbound ? "outbound" : "inbound"}
+              />
             ) : (
-              <p className="text-sm italic">Audio unavailable</p>
+              <p className="text-sm italic opacity-80">Audio unavailable</p>
             )
           ) : (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{body}</p>

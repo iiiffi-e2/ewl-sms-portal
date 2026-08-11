@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import { TemplateSelector } from "@/components/caretext/TemplateSelector";
+import { VoiceMessagePlayer } from "@/components/caretext/VoiceMessagePlayer";
 import {
   VOICE_RECORD_MAX_SECONDS,
   formatRecordingElapsed,
@@ -306,7 +307,11 @@ export const MessageComposer = memo(function MessageComposer({
             Preview · {formatRecordingElapsed(previewDuration)}
           </p>
           {previewUrl ? (
-            <audio controls preload="metadata" src={previewUrl} className="w-full max-w-full" />
+            <VoiceMessagePlayer
+              src={previewUrl}
+              durationSeconds={previewDuration}
+              tone="inbound"
+            />
           ) : null}
         </div>
       )}
@@ -318,13 +323,23 @@ export const MessageComposer = memo(function MessageComposer({
               <button
                 type="button"
                 aria-label="Record voice note"
-                className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                title="Record voice note"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 disabled={isSending || !conversationId || !onSendVoice}
                 onClick={() => {
                   void startRecording();
                 }}
               >
-                Mic
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path d="M7 4a3 3 0 0 1 6 0v6a3 3 0 1 1-6 0V4Z" />
+                  <path d="M5.5 9.643a.75.75 0 0 0-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-1.5v-1.546A6.001 6.001 0 0 0 16 10v-.357a.75.75 0 0 0-1.5 0V10a4.5 4.5 0 0 1-9 0v-.357Z" />
+                </svg>
               </button>
             ) : null}
             <button
