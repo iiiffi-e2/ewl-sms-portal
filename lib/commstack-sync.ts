@@ -1,4 +1,9 @@
-import { ConversationStatus, MessageDirection, MessageStatus } from "@prisma/client";
+import {
+  ConversationStatus,
+  MessageDirection,
+  MessageStatus,
+  MessageType,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   fetchCommStackChannelHistory,
@@ -7,6 +12,11 @@ import {
   hasContactCommStackConfig,
   isCommStackConfigured,
 } from "@/lib/commstack";
+import {
+  outboundEchoMatchFilter,
+  persistInboundCommStackMessage,
+} from "@/lib/commstack-voice-ingest";
+import { isIngestibleCommStackMessage } from "@/lib/voice-messages";
 
 /** Max Notify threads to backfill per inbox sync pass. */
 const INBOX_SYNC_LIMIT = 25;
@@ -45,54 +55,78 @@ export async function syncCommStackConversation(conversationId: string): Promise
 
   let imported = 0;
   for (const item of history) {
-    if (!item.messageId || !item.text?.trim()) continue;
-
-    const existing = await prisma.message.findUnique({
-      where: { commStackMessageId: item.messageId },
-      select: { id: true },
-    });
-    if (existing) continue;
+    if (
+      !item.messageId ||
+      !isIngestibleCommStackMessage({
+        type: item.type,
+        text: item.text,
+        file: item.file,
+      })
+    ) {
+      continue;
+    }
 
     const isOutbound = item.sender === config.portalUserId;
 
     // CareText already writes portal outbound on send. Re-importing history echoes
     // creates duplicate bubbles (especially when ackId and history messageId differ).
     if (isOutbound) {
-      const orphan = await prisma.message.findFirst({
-        where: {
-          conversationId: conversation.id,
-          direction: MessageDirection.outbound,
-          body: item.text,
-          commStackMessageId: null,
-          status: { in: [MessageStatus.queued, MessageStatus.sent, MessageStatus.delivered] },
-        },
-        orderBy: { createdAt: "desc" },
+      const existing = await prisma.message.findUnique({
+        where: { commStackMessageId: item.messageId },
+        select: { id: true },
       });
-      if (orphan) {
-        await prisma.message.update({
-          where: { id: orphan.id },
-          data: {
-            commStackMessageId: item.messageId,
-            status: MessageStatus.sent,
+      if (existing) continue;
+
+      const echoMatch = outboundEchoMatchFilter({
+        type: item.type,
+        text: item.text,
+        file: item.file,
+      });
+      if (echoMatch) {
+        const orphan = await prisma.message.findFirst({
+          where: {
+            conversationId: conversation.id,
+            direction: MessageDirection.outbound,
+            body: echoMatch.body,
+            ...("messageType" in echoMatch && echoMatch.messageType === "voice"
+              ? { messageType: MessageType.voice }
+              : {}),
+            commStackMessageId: null,
+            status: {
+              in: [MessageStatus.queued, MessageStatus.sent, MessageStatus.delivered],
+            },
           },
+          orderBy: { createdAt: "desc" },
         });
+        if (orphan) {
+          await prisma.message.update({
+            where: { id: orphan.id },
+            data: {
+              commStackMessageId: item.messageId,
+              status: MessageStatus.sent,
+            },
+          });
+        }
       }
       continue;
     }
 
-    const createdAt = item.createdAt ? new Date(item.createdAt) : new Date();
-
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        body: item.text,
-        direction: MessageDirection.inbound,
-        status: MessageStatus.received,
-        commStackMessageId: item.messageId,
-        createdAt: Number.isNaN(createdAt.getTime()) ? undefined : createdAt,
+    const result = await persistInboundCommStackMessage({
+      conversationId: conversation.id,
+      config,
+      item: {
+        messageId: item.messageId,
+        type: item.type,
+        text: item.text,
+        file: item.file,
+        duration: item.duration,
+        sender: item.sender,
+        createdAt: item.createdAt,
       },
     });
-    imported += 1;
+    if (result === "created") {
+      imported += 1;
+    }
   }
 
   if (imported > 0) {

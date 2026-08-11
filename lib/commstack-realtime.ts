@@ -2,7 +2,7 @@ import {
   ConversationStatus,
   MessageDirection,
   MessageStatus,
-  Prisma,
+  MessageType,
 } from "@prisma/client";
 import type { RealtimeMessage } from "@notify/commstack-sdk";
 import {
@@ -13,8 +13,13 @@ import {
   isCommStackConfigured,
   type ContactCommStackConfig,
 } from "@/lib/commstack";
+import {
+  outboundEchoMatchFilter,
+  persistInboundCommStackMessage,
+} from "@/lib/commstack-voice-ingest";
 import { isSoftDeleted } from "@/lib/contact-soft-delete";
 import { prisma } from "@/lib/prisma";
+import { isIngestibleCommStackMessage } from "@/lib/voice-messages";
 
 type ConnectionState = {
   key: string;
@@ -32,11 +37,36 @@ function connectionKey(config: ContactCommStackConfig): string {
   return `${config.baseUrl}|${config.appId}|${config.portalUserId}`;
 }
 
-async function attachOutboundEcho(messageId: string, text: string): Promise<boolean> {
+function toIngestItem(message: RealtimeMessage, messageId: string, sender: string) {
+  return {
+    messageId,
+    type: message.type ?? "text",
+    text: message.text ?? "",
+    file: message.file ?? "",
+    duration: Number(message.duration ?? 0),
+    sender,
+    createdAt: message.created_at,
+  };
+}
+
+async function attachOutboundEcho(
+  messageId: string,
+  message: RealtimeMessage,
+): Promise<boolean> {
+  const echoMatch = outboundEchoMatchFilter({
+    type: message.type,
+    text: message.text,
+    file: message.file,
+  });
+  if (!echoMatch) return false;
+
   const orphan = await prisma.message.findFirst({
     where: {
       direction: MessageDirection.outbound,
-      body: text,
+      body: echoMatch.body,
+      ...("messageType" in echoMatch && echoMatch.messageType === "voice"
+        ? { messageType: MessageType.voice }
+        : {}),
       commStackMessageId: null,
       status: { in: [MessageStatus.queued, MessageStatus.sent, MessageStatus.delivered] },
     },
@@ -70,7 +100,7 @@ async function ingestInboundForContact(
   }
 
   const messageId = String(message.message_id);
-  const text = message.text!.trim();
+  const sender = message.sender?.trim() ?? "";
 
   let conversation = await prisma.conversation.findFirst({
     where: {
@@ -90,24 +120,14 @@ async function ingestInboundForContact(
     });
   }
 
-  const createdAt = message.created_at ? new Date(message.created_at) : new Date();
+  const result = await persistInboundCommStackMessage({
+    conversationId: conversation.id,
+    config,
+    item: toIngestItem(message, messageId, sender),
+  });
 
-  try {
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        body: text,
-        direction: MessageDirection.inbound,
-        status: MessageStatus.received,
-        commStackMessageId: messageId,
-        createdAt: Number.isNaN(createdAt.getTime()) ? undefined : createdAt,
-      },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return;
-    }
-    throw error;
+  if (result !== "created") {
+    return;
   }
 
   await prisma.conversation.update({
@@ -125,24 +145,28 @@ async function ingestRealtimeDirectMessage(
 ): Promise<void> {
   const portalUserId = config.portalUserId;
   const messageId = message.message_id != null ? String(message.message_id) : null;
-  const text = message.text?.trim();
   const sender = message.sender?.trim();
 
-  if (!messageId || !text || !sender) {
-    return;
-  }
-
-  const existing = await prisma.message.findUnique({
-    where: { commStackMessageId: messageId },
-    select: { id: true },
-  });
-  if (existing) {
+  if (
+    !messageId ||
+    !sender ||
+    !isIngestibleCommStackMessage({
+      type: message.type,
+      text: message.text,
+      file: message.file,
+    })
+  ) {
     return;
   }
 
   // Echo of our own outbound send — already stored locally by /api/messages/send.
   if (sender === portalUserId) {
-    await attachOutboundEcho(messageId, text);
+    const existing = await prisma.message.findUnique({
+      where: { commStackMessageId: messageId },
+      select: { id: true },
+    });
+    if (existing) return;
+    await attachOutboundEcho(messageId, message);
     return;
   }
 
@@ -171,24 +195,29 @@ async function ingestRealtimeChannelMessage(
 ): Promise<void> {
   const portalUserId = config.portalUserId;
   const messageId = message.message_id != null ? String(message.message_id) : null;
-  const text = message.text?.trim();
   const sender = message.sender?.trim();
   const channelId = message.channel_id?.trim();
 
-  if (!messageId || !text || !sender || !channelId) {
-    return;
-  }
-
-  const existing = await prisma.message.findUnique({
-    where: { commStackMessageId: messageId },
-    select: { id: true },
-  });
-  if (existing) {
+  if (
+    !messageId ||
+    !sender ||
+    !channelId ||
+    !isIngestibleCommStackMessage({
+      type: message.type,
+      text: message.text,
+      file: message.file,
+    })
+  ) {
     return;
   }
 
   if (sender === portalUserId) {
-    await attachOutboundEcho(messageId, text);
+    const existing = await prisma.message.findUnique({
+      where: { commStackMessageId: messageId },
+      select: { id: true },
+    });
+    if (existing) return;
+    await attachOutboundEcho(messageId, message);
     return;
   }
 
