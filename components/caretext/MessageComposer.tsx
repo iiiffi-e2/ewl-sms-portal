@@ -92,6 +92,18 @@ export const MessageComposer = memo(function MessageComposer({
 
   const resetVoiceState = () => {
     clearTimer();
+    const recorder = mediaRecorderRef.current;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      if (recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // ignore cleanup stop errors
+        }
+      }
+    }
     stopMediaTracks();
     mediaRecorderRef.current = null;
     chunksRef.current = [];
@@ -101,7 +113,13 @@ export const MessageComposer = memo(function MessageComposer({
     setPreviewDuration(0);
     revokePreviewUrl();
     setVoicePhase("idle");
+    setError(null);
+    setIsSendingVoice(false);
   };
+
+  useEffect(() => {
+    resetVoiceState();
+  }, [conversationId, enableVoice]);
 
   useEffect(() => {
     return () => {
