@@ -51,3 +51,25 @@ export function toClientMessageAttachment(
     sizeBytes: attachment.sizeBytes,
   };
 }
+
+type ClientAttachmentMeta = {
+  id: string;
+  contentType: string;
+  filename: string;
+  sizeBytes: number;
+};
+
+export function serializeMessageForClient<
+  T extends { attachment?: ClientAttachmentMeta | null },
+>(message: T): Omit<T, "attachment"> & {
+  hasAttachment: boolean;
+  contentType?: string;
+  filename?: string;
+  sizeBytes?: number;
+} {
+  const { attachment, ...rest } = message;
+  return {
+    ...rest,
+    ...toClientMessageAttachment(attachment),
+  };
+}

@@ -18,7 +18,7 @@ import {
   VOICE_FILENAME,
   VOICE_MESSAGE_BODY,
   assertValidVoiceDuration,
-  toClientMessageAttachment,
+  serializeMessageForClient,
 } from "@/lib/voice-messages";
 
 export async function POST(request: Request) {
@@ -193,15 +193,15 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
-      message: {
+      message: serializeMessageForClient({
         ...savedMessage,
-        ...toClientMessageAttachment({
+        attachment: {
           id: attachment.id,
           contentType: attachment.contentType,
           filename: attachment.filename,
           sizeBytes: attachment.sizeBytes,
-        }),
-      },
+        },
+      }),
       conversationId: conversation.id,
     });
   } catch (error) {

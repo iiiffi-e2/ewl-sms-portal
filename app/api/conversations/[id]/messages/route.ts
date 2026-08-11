@@ -7,6 +7,7 @@ import { cacheFor, withDbRetry } from "@/lib/db";
 import { isGroupReadyForMessages } from "@/lib/group-conversations";
 import { getTwilioClient, getTwilioGroupProjectedAddress } from "@/lib/twilio";
 import { sendGroupMessageSchema } from "@/lib/validators";
+import { serializeMessageForClient } from "@/lib/voice-messages";
 
 const OLDER_MESSAGES_DEFAULT_LIMIT = 50;
 const OLDER_MESSAGES_MAX_LIMIT = 100;
@@ -47,6 +48,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         take: limit + 1,
+        include: {
+          attachment: {
+            select: {
+              id: true,
+              contentType: true,
+              filename: true,
+              sizeBytes: true,
+            },
+          },
+        },
         // Older messages are historical and effectively immutable, so each
         // cursor page is highly cacheable. This collapses "load earlier"
         // bursts (and re-scrolls across tabs) onto one origin query, keeping
@@ -56,7 +67,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     );
 
     const hasMore = rows.length > limit;
-    const page = (hasMore ? rows.slice(0, limit) : rows).reverse();
+    const page = (hasMore ? rows.slice(0, limit) : rows)
+      .reverse()
+      .map(serializeMessageForClient);
 
     return NextResponse.json({ messages: page, hasMore });
   } catch (error) {

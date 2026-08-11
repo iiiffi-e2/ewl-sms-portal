@@ -5,6 +5,7 @@ import {
   assertValidVoiceDuration,
   isIngestibleCommStackMessage,
   isVoiceCommStackMessage,
+  serializeMessageForClient,
   toClientMessageAttachment,
 } from "@/lib/voice-messages";
 
@@ -49,5 +50,52 @@ describe("voice-messages helpers", () => {
       filename: "note.m4a",
       sizeBytes: 12,
     });
+  });
+
+  it("serializes messages for clients without nested attachment", () => {
+    const withAttachment = serializeMessageForClient({
+      id: "m1",
+      body: VOICE_MESSAGE_BODY,
+      messageType: "voice",
+      durationSeconds: 12,
+      direction: "outbound",
+      status: "sent",
+      attachment: {
+        id: "a1",
+        contentType: "audio/mp4",
+        filename: "note.m4a",
+        sizeBytes: 99,
+        bytes: new Uint8Array([1, 2, 3]),
+      },
+    });
+
+    expect(withAttachment).toMatchObject({
+      id: "m1",
+      body: VOICE_MESSAGE_BODY,
+      messageType: "voice",
+      durationSeconds: 12,
+      hasAttachment: true,
+      contentType: "audio/mp4",
+      filename: "note.m4a",
+      sizeBytes: 99,
+    });
+    expect(withAttachment).not.toHaveProperty("attachment");
+
+    const withoutAttachment = serializeMessageForClient({
+      id: "m2",
+      body: "hi",
+      messageType: "text",
+      durationSeconds: null,
+      attachment: null,
+    });
+
+    expect(withoutAttachment).toMatchObject({
+      id: "m2",
+      hasAttachment: false,
+      messageType: "text",
+      durationSeconds: null,
+    });
+    expect(withoutAttachment).not.toHaveProperty("attachment");
+    expect(withoutAttachment).not.toHaveProperty("contentType");
   });
 });

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { parseConversationStatus } from "@/lib/status";
 import { getTwilioClient } from "@/lib/twilio";
 import { updateConversationSchema } from "@/lib/validators";
+import { serializeMessageForClient } from "@/lib/voice-messages";
 
 // Only the most recent slice of a thread is returned on load; older messages
 // are fetched on demand via GET /api/conversations/[id]/messages. This keeps the
@@ -40,6 +41,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           messages: {
             orderBy: { createdAt: "desc" },
             take: MESSAGE_PAGE_SIZE + 1,
+            include: {
+              attachment: {
+                select: {
+                  id: true,
+                  contentType: true,
+                  filename: true,
+                  sizeBytes: true,
+                },
+              },
+            },
           },
           notes: {
             include: {
@@ -74,7 +85,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const hasMoreMessages = conversation.messages.length > MESSAGE_PAGE_SIZE;
     const recentMessages = (
       hasMoreMessages ? conversation.messages.slice(0, MESSAGE_PAGE_SIZE) : conversation.messages
-    ).reverse();
+    )
+      .reverse()
+      .map(serializeMessageForClient);
 
     return NextResponse.json({
       conversation: { ...conversation, messages: recentMessages, hasMoreMessages },
