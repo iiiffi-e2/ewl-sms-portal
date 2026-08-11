@@ -428,7 +428,7 @@ export async function sendCommStackChannelMessage(
 }
 
 function voiceUploadTimeoutMs(): number {
-  return Math.max(Number(process.env.COMM_STACK_TIMEOUT_MS ?? 15000), 60000);
+  return Math.max(Number(readEnv("COMM_STACK_TIMEOUT_MS") ?? 15000), 60000);
 }
 
 export async function downloadCommStackAttachment(
