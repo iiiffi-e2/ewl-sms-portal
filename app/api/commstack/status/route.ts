@@ -5,6 +5,7 @@ import {
   getContactCommStackConfig,
   hasContactCommStackConfig,
   isCommStackConfigured,
+  isCommStackRealtimeEnabled,
   verifyCommStackAccess,
 } from "@/lib/commstack";
 import {
@@ -27,6 +28,7 @@ export async function GET() {
     return NextResponse.json({
       configured: false,
       verified: false,
+      realtimeMode: isCommStackRealtimeEnabled() ? "enabled" : "disabled",
       realtimeConnected: false,
       checks: diagnostics.checks,
       missing: diagnostics.missing,
@@ -101,20 +103,27 @@ export async function GET() {
     }
   }
 
+  const realtimeEnabled = isCommStackRealtimeEnabled();
   let realtimeError: string | null = null;
-  try {
-    await startCommStackRealtime();
-  } catch (error) {
-    realtimeError = error instanceof Error ? error.message : String(error);
+
+  if (realtimeEnabled) {
+    try {
+      await startCommStackRealtime();
+    } catch (error) {
+      realtimeError = error instanceof Error ? error.message : String(error);
+    }
   }
 
   return NextResponse.json({
     configured: true,
     verified,
     verifyError,
-    realtimeConnected: isCommStackRealtimeConnected(),
-    realtimeError: realtimeError ?? getCommStackRealtimeError(),
-    realtime: getCommStackRealtimeStatus(),
+    realtimeMode: realtimeEnabled ? "enabled" : "disabled",
+    realtimeConnected: realtimeEnabled ? isCommStackRealtimeConnected() : false,
+    realtimeError: realtimeEnabled ? (realtimeError ?? getCommStackRealtimeError()) : null,
+    realtime: realtimeEnabled
+      ? getCommStackRealtimeStatus()
+      : { connections: [] },
     env: process.env.COMM_STACK_ENV?.trim() ?? null,
     communities: communityList,
     notifyContactCount: notifyContacts.length,

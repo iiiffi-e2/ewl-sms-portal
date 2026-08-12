@@ -59,6 +59,7 @@ Required for group messaging (Twilio Conversations):
 Required for Notify / CommStack messaging:
 
 - `COMM_STACK_ENV` — `dev` or `production`
+- `COMM_STACK_REALTIME` — optional; `0`/`1` to force realtime sockets off/on. Default is off on Vercel (poll + sync-inbox), on locally.
 
 Per-community `COMM_STACK_APP_ID`, `COMM_STACK_APP_NAME`, `COMM_STACK_BASE_URL`, and `COMM_STACK_PORTAL_USER_ID` are entered on each Notify contact (Contacts page or conversation contact details), not as environment variables.
 

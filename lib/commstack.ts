@@ -114,6 +114,24 @@ export function isCommStackConfigured(): boolean {
   return getCommStackConfigDiagnostics().configured;
 }
 
+function parseRealtimeFlag(raw: string | undefined): boolean | null {
+  if (raw == null) return null;
+  const value = raw.trim().toLowerCase();
+  if (value === "0" || value === "false" || value === "off") return false;
+  if (value === "1" || value === "true" || value === "on") return true;
+  return null;
+}
+
+/**
+ * Whether long-lived CommStack Socket.IO should run in this process.
+ * Default: off on Vercel (serverless), on elsewhere. Override with COMM_STACK_REALTIME.
+ */
+export function isCommStackRealtimeEnabled(): boolean {
+  const override = parseRealtimeFlag(readEnv("COMM_STACK_REALTIME"));
+  if (override != null) return override;
+  return !process.env.VERCEL;
+}
+
 export function hasContactCommStackConfig(contact: ContactCommStackFields): boolean {
   return Boolean(
     contact.commStackAppId?.trim() &&

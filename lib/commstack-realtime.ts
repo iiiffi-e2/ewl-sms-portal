@@ -11,6 +11,7 @@ import {
   getScopedCommStackClient,
   hasContactCommStackConfig,
   isCommStackConfigured,
+  isCommStackRealtimeEnabled,
   type ContactCommStackConfig,
 } from "@/lib/commstack";
 import {
@@ -33,6 +34,15 @@ type ConnectionState = {
 
 const connections = new Map<string, ConnectionState>();
 let ensureAllPromise: Promise<void> | null = null;
+let skippedRealtimeLog = false;
+
+function logRealtimeSkippedOnce(): void {
+  if (skippedRealtimeLog) return;
+  skippedRealtimeLog = true;
+  console.info(
+    "[commstack] realtime skipped — disabled (VERCEL default or COMM_STACK_REALTIME=0)",
+  );
+}
 
 function connectionKey(config: ContactCommStackConfig): string {
   return `${config.baseUrl}|${config.appId}|${config.portalUserId}`;
@@ -367,6 +377,10 @@ async function startConnection(config: ContactCommStackConfig): Promise<void> {
 export async function ensureCommStackRealtimeForConfig(
   config: ContactCommStackConfig,
 ): Promise<void> {
+  if (!isCommStackRealtimeEnabled()) {
+    logRealtimeSkippedOnce();
+    return;
+  }
   if (!isCommStackConfigured()) {
     return;
   }
@@ -408,6 +422,10 @@ async function loadDistinctConfigs(): Promise<ContactCommStackConfig[]> {
  * community (baseUrl + appId + portalUserId) found on Notify contacts.
  */
 export async function startCommStackRealtime(): Promise<void> {
+  if (!isCommStackRealtimeEnabled()) {
+    logRealtimeSkippedOnce();
+    return;
+  }
   if (!isCommStackConfigured()) {
     console.info("[commstack] realtime skipped — CommStack env is not configured");
     return;

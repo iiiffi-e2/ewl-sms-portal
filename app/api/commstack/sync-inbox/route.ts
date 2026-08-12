@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { isCommStackConfigured } from "@/lib/commstack";
-import { startCommStackRealtime } from "@/lib/commstack-realtime";
 import { syncCommStackInbox } from "@/lib/commstack-sync";
 
 /**
- * Backfill inbound Notify DMs for recent Notify conversations (not just the
- * open thread). Safe to call periodically from the inbox poller.
+ * Backfills inbound Notify DMs for recent conversations. Safe to call
+ * periodically from the inbox poller; history sync is the primary inbound path.
  */
 export async function POST() {
   const authResult = await requireSession();
@@ -16,13 +15,6 @@ export async function POST() {
 
   if (!isCommStackConfigured()) {
     return NextResponse.json({ synced: 0, imported: 0, skipped: true });
-  }
-
-  // Keep the portal realtime socket warm in this process when possible.
-  try {
-    await startCommStackRealtime();
-  } catch {
-    // Sync still works via history even if realtime cannot connect.
   }
 
   try {

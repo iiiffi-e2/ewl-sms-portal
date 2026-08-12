@@ -11,7 +11,6 @@ import {
   sendCommStackChannelMessage,
   sendCommStackDirectMessage,
 } from "@/lib/commstack";
-import { ensureCommStackRealtimeForConfig, startCommStackRealtime } from "@/lib/commstack-realtime";
 import { evaluateOutboundConsent } from "@/lib/consent";
 import { isNotifyContact } from "@/lib/contact-identity";
 import { isSoftDeleted } from "@/lib/contact-soft-delete";
@@ -208,14 +207,6 @@ export async function POST(request: Request) {
 
     try {
       const config = getContactCommStackConfig(contact);
-
-      // Keep the portal realtime socket alive so replies can arrive after send.
-      void ensureCommStackRealtimeForConfig(config).catch((error) => {
-        console.error("[commstack] realtime ensure-on-send failed", error);
-      });
-      void startCommStackRealtime().catch((error) => {
-        console.error("[commstack] realtime ensure-all-on-send failed", error);
-      });
 
       const senderName = "EyeWatch LIVE";
       const result = contact.notifyChannelId
