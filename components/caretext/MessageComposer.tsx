@@ -63,6 +63,7 @@ export const MessageComposer = memo(function MessageComposer({
   const recordGenerationRef = useRef(0);
   const conversationIdRef = useRef(conversationId);
   const enableVoiceRef = useRef(enableVoice);
+  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     conversationIdRef.current = conversationId;
@@ -347,14 +348,24 @@ export const MessageComposer = memo(function MessageComposer({
               className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
               disabled={isSending}
               onClick={async () => {
+                const outgoing = body.trim();
+                if (!outgoing || sendInFlightRef.current) {
+                  return;
+                }
+
+                // Clear immediately so the composer never waits on Twilio/CommStack
+                // (that round-trip is sometimes ~5s). Restore the draft if send fails.
+                sendInFlightRef.current = true;
+                setBody("");
                 setIsSending(true);
                 setError(null);
                 try {
-                  await onSend({ body, phone, conversationId });
-                  setBody("");
+                  await onSend({ body: outgoing, phone, conversationId });
                 } catch (sendError) {
+                  setBody((current) => (current.trim() === "" ? outgoing : current));
                   setError(sendError instanceof Error ? sendError.message : "Failed to send.");
                 } finally {
+                  sendInFlightRef.current = false;
                   setIsSending(false);
                 }
               }}

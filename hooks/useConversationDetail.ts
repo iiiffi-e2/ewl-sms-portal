@@ -96,6 +96,44 @@ export function mergeMessages(
   );
 }
 
+const OPTIMISTIC_ID_PREFIX = "optimistic-";
+
+export function reconcileFetchedConversation(
+  displayed: ConversationDetail | null | undefined,
+  fetched: ConversationDetail,
+): ConversationDetail {
+  if (!displayed || displayed.id !== fetched.id) {
+    return fetched;
+  }
+
+  const merged = mergeMessages(displayed.messages, fetched.messages);
+  const displayedIds = new Set(displayed.messages.map((message) => message.id));
+  const remainingNewOutbound = fetched.messages.filter(
+    (message) => message.direction === "outbound" && !displayedIds.has(message.id),
+  );
+  const resolvedOptimisticIds = new Set<string>();
+
+  for (const message of merged) {
+    if (!message.id.startsWith(OPTIMISTIC_ID_PREFIX)) {
+      continue;
+    }
+
+    const matchIndex = remainingNewOutbound.findIndex(
+      (candidate) => candidate.body === message.body && candidate.direction === "outbound",
+    );
+    if (matchIndex >= 0) {
+      resolvedOptimisticIds.add(message.id);
+      remainingNewOutbound.splice(matchIndex, 1);
+    }
+  }
+
+  return {
+    ...fetched,
+    messages: merged.filter((message) => !resolvedOptimisticIds.has(message.id)),
+    hasMoreMessages: displayed.hasMoreMessages,
+  };
+}
+
 export function useConversationDetail(initialConversationId?: string) {
   const [conversationId, setConversationIdState] = useState<string | null>(
     initialConversationId ?? null,
@@ -126,31 +164,33 @@ export function useConversationDetail(initialConversationId?: string) {
   // "load earlier" availability is preserved.
   const ingestConversation = useCallback(
     (fetched: ConversationDetail, options?: { urgent?: boolean }) => {
-      const existing = cacheRef.current.get(fetched.id)?.conversation;
-      const merged: ConversationDetail = existing
-        ? {
-            ...fetched,
-            messages: mergeMessages(existing.messages, fetched.messages),
-            hasMoreMessages: existing.hasMoreMessages,
-          }
-        : fetched;
-
-      const revision = getConversationDetailRevision(merged);
-      cacheRef.current.set(fetched.id, {
-        conversation: merged,
-        fetchedAt: Date.now(),
-        revision,
-      });
-
-      if (selectedIdRef.current !== fetched.id) {
-        return;
-      }
+      const writeCache = (merged: ConversationDetail) => {
+        cacheRef.current.set(fetched.id, {
+          conversation: merged,
+          fetchedAt: Date.now(),
+          revision: getConversationDetailRevision(merged),
+        });
+      };
 
       const apply = () => {
+        if (selectedIdRef.current !== fetched.id) {
+          const cached = cacheRef.current.get(fetched.id)?.conversation;
+          writeCache(reconcileFetchedConversation(cached, fetched));
+          return;
+        }
+
         setActiveConversationState((current) => {
+          const merged = reconcileFetchedConversation(
+            current?.id === fetched.id
+              ? current
+              : (cacheRef.current.get(fetched.id)?.conversation ?? null),
+            fetched,
+          );
+          writeCache(merged);
+
           if (
             current?.id === merged.id &&
-            getConversationDetailRevision(current) === revision
+            getConversationDetailRevision(current) === getConversationDetailRevision(merged)
           ) {
             return current;
           }

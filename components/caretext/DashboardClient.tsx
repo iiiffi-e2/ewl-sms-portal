@@ -15,7 +15,7 @@ import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
-import { useConversationDetail } from "@/hooks/useConversationDetail";
+import { mergeMessages, useConversationDetail } from "@/hooks/useConversationDetail";
 import { getConversationsListRevision } from "@/lib/conversation-revision";
 import { VOICE_MESSAGE_BODY } from "@/lib/voice-messages";
 import { createVoiceSendFormData } from "@/lib/voice-recorder";
@@ -420,6 +420,41 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
   const handleGroupSend = useCallback(
     async (id: string, body: string) => {
+      const optimisticId =
+        activeConversation?.id === id ? `optimistic-${crypto.randomUUID()}` : null;
+
+      const removeOptimistic = () => {
+        if (!optimisticId) return;
+        updateActiveConversation((current) =>
+          current.id === id
+            ? {
+                ...current,
+                messages: current.messages.filter((message) => message.id !== optimisticId),
+              }
+            : current,
+        );
+      };
+
+      if (optimisticId) {
+        updateActiveConversation((current) =>
+          current.id === id
+            ? {
+                ...current,
+                messages: [
+                  ...current.messages,
+                  {
+                    id: optimisticId,
+                    body,
+                    direction: "outbound" as const,
+                    status: "sending",
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              }
+            : current,
+        );
+      }
+
       const response = await fetch(`/api/conversations/${id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -427,14 +462,37 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       });
 
       if (!response.ok) {
+        removeOptimistic();
         const errorData = await response.json().catch(() => null);
         throw new Error(errorData?.error ?? "Failed to send message.");
       }
 
-      await loadConversations();
-      await loadConversationDetail(id);
+      const data = await response.json().catch(() => null);
+      if (optimisticId && data?.message) {
+        updateActiveConversation((current) =>
+          current.id === id
+            ? {
+                ...current,
+                messages: mergeMessages(
+                  current.messages.filter((message) => message.id !== optimisticId),
+                  [
+                    {
+                      id: data.message.id,
+                      body: data.message.body,
+                      direction: "outbound" as const,
+                      status: data.message.status,
+                      createdAt: data.message.createdAt,
+                    },
+                  ],
+                ),
+              }
+            : current,
+        );
+      }
+
+      void Promise.all([loadConversations(), loadConversationDetail(id)]);
     },
-    [loadConversations, loadConversationDetail],
+    [activeConversation, loadConversations, loadConversationDetail, updateActiveConversation],
   );
 
   const handleSendMessage = useCallback(
@@ -524,16 +582,17 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           current.id === targetConversationId
             ? {
                 ...current,
-                messages: current.messages.map((message) =>
-                  message.id === optimisticId
-                    ? {
-                        id: data.message.id,
-                        body: data.message.body,
-                        direction: "outbound" as const,
-                        status: data.message.status,
-                        createdAt: data.message.createdAt,
-                      }
-                    : message,
+                messages: mergeMessages(
+                  current.messages.filter((message) => message.id !== optimisticId),
+                  [
+                    {
+                      id: data.message.id,
+                      body: data.message.body,
+                      direction: "outbound" as const,
+                      status: data.message.status,
+                      createdAt: data.message.createdAt,
+                    },
+                  ],
                 ),
               }
             : current,
@@ -542,7 +601,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
       selectConversation(data.conversationId);
       setIsNewConversation(false);
-      await Promise.all([
+      // Don't block the composer on inbox/detail refetch (Notify sync can take seconds).
+      void Promise.all([
         loadConversations(),
         loadConversationDetail(data.conversationId),
       ]);
@@ -635,27 +695,28 @@ export function DashboardClient({ initialConversationId }: { initialConversation
           current.id === targetConversationId
             ? {
                 ...current,
-                messages: current.messages.map((message) =>
-                  message.id === optimisticId
-                    ? {
-                        id: data.message.id,
-                        body: data.message.body,
-                        direction: "outbound" as const,
-                        status: data.message.status,
-                        createdAt: data.message.createdAt,
-                        messageType: data.message.messageType ?? "voice",
-                        durationSeconds:
-                          data.message.durationSeconds ?? durationSeconds,
-                        hasAttachment: data.message.hasAttachment ?? true,
-                      }
-                    : message,
+                messages: mergeMessages(
+                  current.messages.filter((message) => message.id !== optimisticId),
+                  [
+                    {
+                      id: data.message.id,
+                      body: data.message.body,
+                      direction: "outbound" as const,
+                      status: data.message.status,
+                      createdAt: data.message.createdAt,
+                      messageType: data.message.messageType ?? "voice",
+                      durationSeconds:
+                        data.message.durationSeconds ?? durationSeconds,
+                      hasAttachment: data.message.hasAttachment ?? true,
+                    },
+                  ],
                 ),
               }
             : current,
         );
       }
 
-      await Promise.all([
+      void Promise.all([
         loadConversations(),
         loadConversationDetail(targetConversationId),
       ]);
