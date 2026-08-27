@@ -1,12 +1,14 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
 import {
+  MESSAGE_EXPORT_SELECT,
   buildExportFilename,
+  buildMessageExportWhere,
   buildMessagesCsv,
+  collectExportBatches,
   messageExportQuerySchema,
-  parseExportDateBoundaries,
-  type MessageExportRow,
+  toMessageExportRow,
 } from "@/lib/message-export";
 import { prisma } from "@/lib/prisma";
 
@@ -29,80 +31,51 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const { start, end } = parseExportDateBoundaries(parsed.data);
-
   if (parsed.data.conversationId && parsed.data.contactId) {
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: parsed.data.conversationId },
-      select: { contactId: true },
-    });
+    try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: parsed.data.conversationId },
+        select: { contactId: true },
+      });
 
-    if (!conversation || conversation.contactId !== parsed.data.contactId) {
-      return NextResponse.json(
-        { error: "Conversation does not belong to the selected contact." },
-        { status: 400 },
-      );
+      if (!conversation || conversation.contactId !== parsed.data.contactId) {
+        return NextResponse.json(
+          { error: "Conversation does not belong to the selected contact." },
+          { status: 400 },
+        );
+      }
+    } catch (error) {
+      return dbErrorResponse(error);
     }
   }
 
-  const createdAtFilter: Prisma.DateTimeFilter | undefined =
-    start || end
-      ? {
-          ...(start ? { gte: start } : {}),
-          ...(end ? { lte: end } : {}),
-        }
-      : undefined;
+  const where = buildMessageExportWhere(parsed.data);
 
-  const messages = await prisma.message.findMany({
-    where: {
-      ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
-      ...(parsed.data.conversationId
-        ? { conversationId: parsed.data.conversationId }
-        : {}),
-      ...(parsed.data.contactId
-        ? { conversation: { contactId: parsed.data.contactId } }
-        : {}),
-    },
-    orderBy: { createdAt: "asc" },
-    include: {
-      user: { select: { name: true } },
-      conversation: {
-        include: {
-          contact: {
-            select: {
-              name: true,
-              phone: true,
-              facility: true,
-            },
-          },
-        },
+  try {
+    const messages = await collectExportBatches((args) =>
+      prisma.message.findMany({
+        where,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: args.take,
+        ...(args.cursor ? { skip: 1, cursor: { id: args.cursor } } : {}),
+        select: MESSAGE_EXPORT_SELECT,
+      }),
+    );
+
+    if (messages.length === 0) {
+      return NextResponse.json({ error: "No messages match these filters." }, { status: 404 });
+    }
+
+    const csv = buildMessagesCsv(messages.map(toMessageExportRow));
+    const filename = buildExportFilename();
+
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
-    },
-  });
-
-  if (messages.length === 0) {
-    return NextResponse.json({ error: "No messages match these filters." }, { status: 404 });
+    });
+  } catch (error) {
+    return dbErrorResponse(error);
   }
-
-  const rows: MessageExportRow[] = messages.map((message) => ({
-    createdAt: message.createdAt,
-    direction: message.direction,
-    status: message.status,
-    body: message.body,
-    contactName: message.conversation.contact?.name ?? message.conversation.title ?? "",
-    contactPhone: message.conversation.contact?.phone ?? message.authorPhone ?? "",
-    facility: message.conversation.contact?.facility ?? "",
-    sentBy: message.direction === "outbound" ? (message.user?.name ?? "") : "",
-    conversationId: message.conversationId,
-  }));
-
-  const csv = buildMessagesCsv(rows);
-  const filename = buildExportFilename();
-
-  return new Response(csv, {
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-  });
 }

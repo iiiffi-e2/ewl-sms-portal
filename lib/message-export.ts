@@ -126,3 +126,101 @@ export function buildExportFilename(date = new Date()): string {
   const stamp = date.toISOString().slice(0, 10);
   return `caretext-messages-${stamp}.csv`;
 }
+
+export const MESSAGE_EXPORT_BATCH_SIZE = 200;
+
+export const MESSAGE_EXPORT_SELECT = {
+  id: true,
+  createdAt: true,
+  direction: true,
+  status: true,
+  body: true,
+  authorPhone: true,
+  conversationId: true,
+  user: { select: { name: true } },
+  conversation: {
+    select: {
+      title: true,
+      contact: {
+        select: {
+          name: true,
+          phone: true,
+          facility: true,
+        },
+      },
+    },
+  },
+} as const;
+
+export type MessageExportRecord = {
+  createdAt: Date;
+  direction: string;
+  status: string;
+  body: string;
+  authorPhone: string | null;
+  conversationId: string;
+  user: { name: string | null } | null;
+  conversation: {
+    title: string | null;
+    contact: {
+      name: string | null;
+      phone: string | null;
+      facility: string | null;
+    } | null;
+  };
+};
+
+export function buildMessageExportWhere(query: MessageExportQuery) {
+  const { start, end } = parseExportDateBoundaries(query);
+
+  return {
+    ...(start || end
+      ? {
+          createdAt: {
+            ...(start ? { gte: start } : {}),
+            ...(end ? { lte: end } : {}),
+          },
+        }
+      : {}),
+    ...(query.conversationId ? { conversationId: query.conversationId } : {}),
+    ...(query.contactId ? { conversation: { contactId: query.contactId } } : {}),
+  };
+}
+
+export function toMessageExportRow(message: MessageExportRecord): MessageExportRow {
+  return {
+    createdAt: message.createdAt,
+    direction: message.direction,
+    status: message.status,
+    body: message.body,
+    contactName: message.conversation.contact?.name ?? message.conversation.title ?? "",
+    contactPhone: message.conversation.contact?.phone ?? message.authorPhone ?? "",
+    facility: message.conversation.contact?.facility ?? "",
+    sentBy: message.direction === "outbound" ? (message.user?.name ?? "") : "",
+    conversationId: message.conversationId,
+  };
+}
+
+export async function collectExportBatches<T extends { id: string }>(
+  fetchBatch: (args: { take: number; cursor?: string }) => Promise<T[]>,
+): Promise<T[]> {
+  const results: T[] = [];
+  let cursor: string | undefined;
+
+  for (;;) {
+    const batch = await fetchBatch({ take: MESSAGE_EXPORT_BATCH_SIZE, cursor });
+    if (batch.length === 0) {
+      break;
+    }
+
+    results.push(...batch);
+
+    if (batch.length < MESSAGE_EXPORT_BATCH_SIZE) {
+      break;
+    }
+
+    cursor = batch[batch.length - 1]?.id;
+  }
+
+  return results;
+}

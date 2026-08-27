@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  MESSAGE_EXPORT_BATCH_SIZE,
   buildExportFilename,
+  buildMessageExportWhere,
   buildMessagesCsv,
+  collectExportBatches,
   escapeCsvField,
   formatEasternExportDateTime,
   formatMessageExportRow,
   messageExportQuerySchema,
   parseExportDateBoundaries,
+  toMessageExportRow,
 } from "@/lib/message-export";
 
 describe("escapeCsvField", () => {
@@ -123,6 +127,85 @@ describe("buildExportFilename", () => {
   it("includes the current date", () => {
     expect(buildExportFilename(new Date("2026-06-23T15:00:00.000Z"))).toBe(
       "caretext-messages-2026-06-23.csv",
+    );
+  });
+});
+
+describe("buildMessageExportWhere", () => {
+  it("applies date, contact, and conversation filters", () => {
+    expect(
+      buildMessageExportWhere({
+        startDate: "2026-06-01",
+        endDate: "2026-06-02",
+        contactId: "550e8400-e29b-41d4-a716-446655440000",
+        conversationId: "550e8400-e29b-41d4-a716-446655440001",
+      }),
+    ).toEqual({
+      createdAt: {
+        gte: new Date("2026-06-01T00:00:00.000Z"),
+        lte: new Date("2026-06-02T23:59:59.999Z"),
+      },
+      conversationId: "550e8400-e29b-41d4-a716-446655440001",
+      conversation: { contactId: "550e8400-e29b-41d4-a716-446655440000" },
+    });
+  });
+
+  it("returns an empty where clause when no filters are set", () => {
+    expect(buildMessageExportWhere({})).toEqual({});
+  });
+});
+
+describe("toMessageExportRow", () => {
+  it("maps selected message fields onto an export row", () => {
+    expect(
+      toMessageExportRow({
+        createdAt: new Date("2026-01-15T11:30:00.000Z"),
+        direction: "outbound",
+        status: "delivered",
+        body: "Hello",
+        authorPhone: "+15550001111",
+        conversationId: "conv-1",
+        user: { name: "Nurse A" },
+        conversation: {
+          title: "Fallback title",
+          contact: {
+            name: "Jane Doe",
+            phone: "+15551234567",
+            facility: "North Wing",
+          },
+        },
+      }),
+    ).toEqual({
+      createdAt: new Date("2026-01-15T11:30:00.000Z"),
+      direction: "outbound",
+      status: "delivered",
+      body: "Hello",
+      contactName: "Jane Doe",
+      contactPhone: "+15551234567",
+      facility: "North Wing",
+      sentBy: "Nurse A",
+      conversationId: "conv-1",
+    });
+  });
+});
+
+describe("collectExportBatches", () => {
+  it("keeps the batch size under Accelerate's response limit", () => {
+    expect(MESSAGE_EXPORT_BATCH_SIZE).toBe(200);
+  });
+
+  it("pages through cursor batches until a short page", async () => {
+    const fetchBatch = async ({ cursor }: { take: number; cursor?: string }) => {
+      if (!cursor) {
+        return Array.from({ length: MESSAGE_EXPORT_BATCH_SIZE }, (_, index) => ({
+          id: `full-${index}`,
+        }));
+      }
+      return [{ id: "last" }];
+    };
+
+    await expect(collectExportBatches(fetchBatch)).resolves.toHaveLength(
+      MESSAGE_EXPORT_BATCH_SIZE + 1,
     );
   });
 });
