@@ -3,6 +3,7 @@ import {
   buildExportFilename,
   buildMessagesCsv,
   escapeCsvField,
+  formatEasternExportDateTime,
   formatMessageExportRow,
   messageExportQuerySchema,
   parseExportDateBoundaries,
@@ -20,10 +21,33 @@ describe("escapeCsvField", () => {
   });
 });
 
+describe("formatEasternExportDateTime", () => {
+  it("formats a winter UTC timestamp in Eastern Standard Time", () => {
+    expect(formatEasternExportDateTime(new Date("2026-01-15T11:30:00.000Z"))).toEqual({
+      date: "2026-01-15",
+      time: "6:30AM",
+    });
+  });
+
+  it("formats a summer UTC timestamp in Eastern Daylight Time", () => {
+    expect(formatEasternExportDateTime(new Date("2026-08-26T00:06:30.996Z"))).toEqual({
+      date: "2026-08-25",
+      time: "8:06PM",
+    });
+  });
+
+  it("uses a 12-hour clock at noon Eastern", () => {
+    expect(formatEasternExportDateTime(new Date("2026-06-23T16:00:00.000Z"))).toEqual({
+      date: "2026-06-23",
+      time: "12:00PM",
+    });
+  });
+});
+
 describe("formatMessageExportRow", () => {
-  it("joins escaped columns", () => {
+  it("joins escaped columns with Eastern date and time", () => {
     const row = formatMessageExportRow({
-      messageTime: "2026-06-23T12:00:00.000Z",
+      createdAt: new Date("2026-01-15T11:30:00.000Z"),
       direction: "outbound",
       status: "delivered",
       body: 'Hi, "there"',
@@ -35,7 +59,7 @@ describe("formatMessageExportRow", () => {
     });
 
     expect(row).toContain('"Hi, ""there"""');
-    expect(row.startsWith("2026-06-23T12:00:00.000Z,outbound,delivered")).toBe(true);
+    expect(row.startsWith("2026-01-15,6:30AM,outbound,delivered")).toBe(true);
     expect(row.endsWith(",conv-1")).toBe(true);
   });
 });
@@ -44,7 +68,7 @@ describe("buildMessagesCsv", () => {
   it("includes header and CRLF-separated rows", () => {
     const csv = buildMessagesCsv([
       {
-        messageTime: "2026-06-23T12:00:00.000Z",
+        createdAt: new Date("2026-01-15T11:30:00.000Z"),
         direction: "inbound",
         status: "received",
         body: "Thanks",
@@ -56,9 +80,9 @@ describe("buildMessagesCsv", () => {
       },
     ]);
 
-    expect(csv.startsWith("Message Time,Direction,Status,Body")).toBe(true);
+    expect(csv.startsWith("Date,Time,Direction,Status,Body")).toBe(true);
     expect(csv).toContain("\r\n");
-    expect(csv).toContain("Thanks");
+    expect(csv).toContain("2026-01-15,6:30AM,inbound,received,Thanks");
   });
 });
 

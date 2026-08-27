@@ -1,7 +1,10 @@
 import { z } from "zod";
 
+const EASTERN_TIME_ZONE = "America/New_York";
+
 export const MESSAGE_EXPORT_HEADERS = [
-  "Message Time",
+  "Date",
+  "Time",
   "Direction",
   "Status",
   "Body",
@@ -13,7 +16,7 @@ export const MESSAGE_EXPORT_HEADERS = [
 ] as const;
 
 export type MessageExportRow = {
-  messageTime: string;
+  createdAt: Date;
   direction: string;
   status: string;
   body: string;
@@ -23,6 +26,32 @@ export type MessageExportRow = {
   sentBy: string;
   conversationId: string;
 };
+
+function easternPart(
+  parts: Intl.DateTimeFormatPart[],
+  type: Intl.DateTimeFormatPartTypes,
+): string {
+  return parts.find((part) => part.type === type)?.value ?? "";
+}
+
+export function formatEasternExportDateTime(date: Date): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+
+  const dayPeriod = easternPart(parts, "dayPeriod").replace(/\./g, "").toUpperCase();
+
+  return {
+    date: `${easternPart(parts, "year")}-${easternPart(parts, "month")}-${easternPart(parts, "day")}`,
+    time: `${easternPart(parts, "hour")}:${easternPart(parts, "minute")}${dayPeriod}`,
+  };
+}
 
 export const messageExportQuerySchema = z
   .object({
@@ -57,8 +86,11 @@ export function escapeCsvField(value: string): string {
 }
 
 export function formatMessageExportRow(row: MessageExportRow): string {
+  const { date, time } = formatEasternExportDateTime(row.createdAt);
+
   return [
-    row.messageTime,
+    date,
+    time,
     row.direction,
     row.status,
     row.body,

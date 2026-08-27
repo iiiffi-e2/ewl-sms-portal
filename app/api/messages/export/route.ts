@@ -85,7 +85,7 @@ export async function GET(request: Request) {
   }
 
   const rows: MessageExportRow[] = messages.map((message) => ({
-    messageTime: message.createdAt.toISOString(),
+    createdAt: message.createdAt,
     direction: message.direction,
     status: message.status,
     body: message.body,
