@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { Device, Call } from "@twilio/voice-sdk";
+import { PRESENCE_HEARTBEAT_MS } from "@/lib/voice/presence";
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
@@ -36,7 +37,27 @@ async function fetchVoiceToken(): Promise<VoiceTokenResponse> {
   return response.json();
 }
 
-type CallPhase = "idle" | "connecting" | "ringing" | "connected" | "disconnecting" | "error";
+function readCallParam(call: Call, key: string): string | undefined {
+  const value = call.customParameters?.get(key);
+  return value ? value : undefined;
+}
+
+async function pingPresence() {
+  await fetch("/api/voice/presence", { method: "POST" });
+}
+
+async function clearPresence() {
+  await fetch("/api/voice/presence", { method: "DELETE", keepalive: true });
+}
+
+type CallPhase =
+  | "idle"
+  | "incoming"
+  | "connecting"
+  | "ringing"
+  | "connected"
+  | "disconnecting"
+  | "error";
 
 type ActiveCallInfo = {
   callLogId: string;
@@ -45,18 +66,23 @@ type ActiveCallInfo = {
   contactName?: string | null;
 };
 
+type IncomingCallInfo = ActiveCallInfo;
+
 type VoiceCallContextValue = {
   callPhase: CallPhase;
   isCallActive: boolean;
   isMuted: boolean;
   elapsedSeconds: number;
   activeCall: ActiveCallInfo | null;
+  incomingCall: IncomingCallInfo | null;
   errorMessage: string | null;
   startCall: (input: {
     conversationId: string;
     phone: string;
     contactName?: string | null;
   }) => Promise<void>;
+  acceptIncoming: () => Promise<string | null>;
+  declineIncoming: () => void;
   endCall: () => void;
   toggleMute: () => void;
 };
@@ -74,8 +100,12 @@ export function useVoiceCall() {
 export function VoiceCallProvider({ children }: { children: ReactNode }) {
   const deviceRef = useRef<Device | null>(null);
   const activeCallRef = useRef<Call | null>(null);
+  const incomingSdkCallRef = useRef<Call | null>(null);
+  const incomingCallRef = useRef<IncomingCallInfo | null>(null);
+  const callPhaseRef = useRef<CallPhase>("idle");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tokenExpiresAtRef = useRef<number | null>(null);
   const connectedAtRef = useRef<number | null>(null);
 
@@ -83,7 +113,11 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
   const [isMuted, setIsMuted] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeCall, setActiveCall] = useState<ActiveCallInfo | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingCallInfo | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  callPhaseRef.current = callPhase;
+  incomingCallRef.current = incomingCall;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -97,6 +131,31 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
+  }, []);
+
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current) {
+      clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
+  }, []);
+
+  const startHeartbeat = useCallback(() => {
+    clearHeartbeat();
+    void pingPresence().catch((error) => {
+      console.error("Failed to publish voice presence:", error);
+    });
+    heartbeatTimerRef.current = setInterval(() => {
+      void pingPresence().catch((error) => {
+        console.error("Failed to publish voice presence:", error);
+      });
+    }, PRESENCE_HEARTBEAT_MS);
+  }, [clearHeartbeat]);
+
+  const clearIncoming = useCallback(() => {
+    incomingSdkCallRef.current = null;
+    incomingCallRef.current = null;
+    setIncomingCall(null);
   }, []);
 
   const scheduleTokenRefresh = useCallback(
@@ -146,7 +205,7 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       tokenExpiresAtRef.current = Date.now() + data.expiresIn * 1000;
       scheduleTokenRefresh(() => refreshDeviceTokenRef.current());
       setErrorMessage(null);
-      if (!activeCallRef.current) {
+      if (!activeCallRef.current && !incomingSdkCallRef.current) {
         setCallPhase("idle");
       }
       return true;
@@ -163,11 +222,12 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
     clearTimer();
     connectedAtRef.current = null;
     activeCallRef.current = null;
+    clearIncoming();
     setIsMuted(false);
     setElapsedSeconds(0);
     setActiveCall(null);
     setCallPhase("idle");
-  }, [clearTimer]);
+  }, [clearIncoming, clearTimer]);
 
   const cancelCallLog = useCallback(async (callLogId: string) => {
     await fetch(`/api/calls/${callLogId}`, {
@@ -203,10 +263,56 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       });
     });
 
+    device.on("incoming", (call) => {
+      const phase = callPhaseRef.current;
+      const busy =
+        Boolean(activeCallRef.current) ||
+        (phase !== "idle" && phase !== "error" && phase !== "incoming");
+
+      if (busy || incomingSdkCallRef.current) {
+        call.reject();
+        return;
+      }
+
+      const callLogId = readCallParam(call, "callLogId");
+      const conversationId = readCallParam(call, "conversationId");
+      const phone = readCallParam(call, "phone");
+      const contactName = readCallParam(call, "contactName") || null;
+
+      if (!callLogId || !conversationId || !phone) {
+        call.reject();
+        return;
+      }
+
+      const info: IncomingCallInfo = {
+        callLogId,
+        conversationId,
+        phone,
+        contactName,
+      };
+
+      incomingSdkCallRef.current = call;
+      incomingCallRef.current = info;
+      setIncomingCall(info);
+      setCallPhase("incoming");
+      setErrorMessage(null);
+
+      call.on("cancel", () => {
+        if (incomingSdkCallRef.current !== call) {
+          return;
+        }
+        clearIncoming();
+        if (callPhaseRef.current === "incoming") {
+          setCallPhase("idle");
+        }
+      });
+    });
+
     await device.register();
     deviceRef.current = device;
+    startHeartbeat();
     scheduleTokenRefresh(() => refreshDeviceTokenRef.current());
-  }, [scheduleTokenRefresh]);
+  }, [clearIncoming, scheduleTokenRefresh, startHeartbeat]);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,11 +328,13 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearTimer();
       clearRefreshTimer();
+      clearHeartbeat();
+      void clearPresence().catch(() => undefined);
       deviceRef.current?.destroy();
       deviceRef.current = null;
       tokenExpiresAtRef.current = null;
     };
-  }, [clearRefreshTimer, clearTimer, setupDevice]);
+  }, [clearHeartbeat, clearRefreshTimer, clearTimer, setupDevice]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -238,6 +346,10 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       if (!deviceRef.current || !expiresAt) {
         return;
       }
+
+      void pingPresence().catch((error) => {
+        console.error("Failed to publish voice presence after tab became visible:", error);
+      });
 
       if (Date.now() >= expiresAt - TOKEN_REFRESH_BUFFER_MS) {
         refreshDeviceToken().catch((error) => {
@@ -365,6 +477,41 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
     [bindCallEvents, callPhase, cancelCallLog, recoverExpiredToken, refreshDeviceToken, resetCallState],
   );
 
+  const acceptIncoming = useCallback(async () => {
+    const call = incomingSdkCallRef.current;
+    const info = incomingCallRef.current;
+    if (!call || !info) {
+      return null;
+    }
+
+    incomingSdkCallRef.current = null;
+    setIncomingCall(null);
+    setErrorMessage(null);
+    setCallPhase("connecting");
+    setActiveCall(info);
+    activeCallRef.current = call;
+    bindCallEvents(call, info.callLogId);
+
+    try {
+      call.accept();
+      await fetch(`/api/calls/${info.callLogId}/answer`, { method: "POST" });
+      return info.conversationId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to answer call.";
+      setErrorMessage(message);
+      call.disconnect();
+      resetCallState();
+      return null;
+    }
+  }, [bindCallEvents, resetCallState]);
+
+  const declineIncoming = useCallback(() => {
+    const call = incomingSdkCallRef.current;
+    call?.reject();
+    clearIncoming();
+    setCallPhase("idle");
+  }, [clearIncoming]);
+
   const endCall = useCallback(() => {
     setCallPhase("disconnecting");
     deviceRef.current?.disconnectAll();
@@ -385,12 +532,27 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       isMuted,
       elapsedSeconds,
       activeCall,
+      incomingCall,
       errorMessage,
       startCall,
+      acceptIncoming,
+      declineIncoming,
       endCall,
       toggleMute,
     }),
-    [activeCall, callPhase, elapsedSeconds, endCall, errorMessage, isMuted, startCall, toggleMute],
+    [
+      acceptIncoming,
+      activeCall,
+      callPhase,
+      declineIncoming,
+      elapsedSeconds,
+      endCall,
+      errorMessage,
+      incomingCall,
+      isMuted,
+      startCall,
+      toggleMute,
+    ],
   );
 
   return <VoiceCallContext.Provider value={value}>{children}</VoiceCallContext.Provider>;

@@ -8,6 +8,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { ensureOpenPhoneConversation } from "@/lib/contact-conversation";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
 import { OPT_IN_INTRO_TEXT, matchStartKeyword, matchStopKeyword } from "@/lib/consent";
@@ -33,11 +34,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, deduplicated: true });
   }
 
-  const contact = await prisma.contact.upsert({
-    where: { phone: normalizedPhone },
-    update: { deletedAt: null },
-    create: { phone: normalizedPhone },
-  });
+  const { contact, conversation } = await ensureOpenPhoneConversation(normalizedPhone);
 
   const stopKeyword = matchStopKeyword(body);
   const startKeyword = matchStartKeyword(body);
@@ -54,25 +51,6 @@ export async function POST(request: Request) {
         contactId: contact.id,
         type: ConsentEventType.opted_out,
         detail: stopKeyword,
-      },
-    });
-  }
-
-  let conversation = await prisma.conversation.findFirst({
-    where: {
-      contactId: contact.id,
-      status: { not: ConversationStatus.closed },
-      archivedAt: null,
-    },
-    orderBy: { lastMessageAt: "desc" },
-  });
-
-  if (!conversation) {
-    conversation = await prisma.conversation.create({
-      data: {
-        contactId: contact.id,
-        status: ConversationStatus.new,
-        lastMessageAt: new Date(),
       },
     });
   }

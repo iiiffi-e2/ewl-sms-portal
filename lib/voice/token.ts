@@ -26,7 +26,7 @@ export function createVoiceAccessToken(identity: string): string {
 
   const voiceGrant = new VoiceGrant({
     outgoingApplicationSid: twimlAppSid,
-    incomingAllow: false,
+    incomingAllow: true,
   });
 
   token.addGrant(voiceGrant);

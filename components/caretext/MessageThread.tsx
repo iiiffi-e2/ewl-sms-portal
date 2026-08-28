@@ -61,6 +61,7 @@ type CallLog = {
   status: string;
   durationSeconds: number | null;
   startedAt: string;
+  direction?: string | null;
 };
 
 type ThreadItem =
@@ -338,6 +339,7 @@ export const MessageThread = memo(function MessageThread({
             startedAt={item.callLog.startedAt}
             status={item.callLog.status}
             durationSeconds={item.callLog.durationSeconds}
+            direction={item.callLog.direction}
           />
         ),
       )}
