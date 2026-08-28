@@ -27,3 +27,19 @@ export function formatCallThreadSummary(input: {
 
   return formatCallStatusLabel(input.status);
 }
+
+const MISSED_INBOUND_STATUSES = new Set(["no_answer", "canceled", "busy", "failed"]);
+
+export function formatCallThreadTitle(input: {
+  direction?: string | null;
+  status: string;
+}): string {
+  if (input.direction === "inbound") {
+    if (MISSED_INBOUND_STATUSES.has(input.status)) {
+      return "Missed call";
+    }
+    return "Incoming call";
+  }
+
+  return "Call placed";
+}

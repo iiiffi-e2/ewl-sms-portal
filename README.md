@@ -179,12 +179,18 @@ Check both test phones: the message must arrive as one **native group thread** c
 1. In Twilio Console, create an API Key (Account → API Keys).
 2. Create a TwiML App with Voice Request URL:
    - `{NEXTAUTH_URL}/api/webhooks/voice/twiml`
-3. Add to `.env`:
+   - Use this TwiML App only for outbound browser calls (`TWILIO_TWIML_APP_SID`).
+3. On the Twilio phone number, set **A call comes in** to the inbound webhook (HTTP POST):
+   - `{NEXTAUTH_URL}/api/webhooks/voice/incoming`
+   - Do **not** point the phone number at the TwiML App.
+4. Optionally set the phone number Status callback to:
+   - `{NEXTAUTH_URL}/api/webhooks/voice/status`
+5. Add to `.env`:
    - `TWILIO_API_KEY_SID`
    - `TWILIO_API_KEY_SECRET`
    - `TWILIO_TWIML_APP_SID`
-4. For local development, expose your app via ngrok and set `NEXTAUTH_URL` to the ngrok URL.
-5. Ensure your Twilio phone number has Voice capability enabled.
+6. For local development, expose your app via ngrok and set `NEXTAUTH_URL` to the ngrok URL.
+7. Ensure your Twilio phone number has Voice capability enabled.
 
 ## Group Messaging Manual QA Checklist
 
@@ -200,7 +206,7 @@ Check both test phones: the message must arrive as one **native group thread** c
 ## Notes
 
 - Database records are the source of truth for all conversation history.
-- Twilio Voice browser calling is enabled via the Call button in conversation threads.
+- Twilio Voice browser calling is enabled via the Call button in conversation threads. Clients can also call the Twilio number; logged-in users with the app open get a ring, and the first to Accept answers in the browser.
 - Requires Twilio API Key, TwiML App, and Voice SDK setup (see Twilio Voice Setup below).
-- Call activity is logged to CallLog; recording and inbound voice are planned for future releases.
+- Call activity is logged to CallLog. Recording is planned for a future release.
 - Polling is used for near-realtime refresh in dashboard views.

@@ -31,6 +31,17 @@ describe("createVoiceAccessToken", () => {
     expect(VOICE_TOKEN_TTL_SECONDS).toBe(3600);
   });
 
+  it("grants incoming client calls", () => {
+    const token = createVoiceAccessToken("user-uuid-123");
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1], "base64url").toString("utf8"),
+    ) as {
+      grants?: { voice?: { incoming?: { allow?: boolean } } };
+    };
+
+    expect(payload.grants?.voice?.incoming?.allow).toBe(true);
+  });
+
   it("throws when env vars missing", () => {
     delete process.env.TWILIO_API_KEY_SID;
     expect(() => createVoiceAccessToken("user-uuid-123")).toThrow(

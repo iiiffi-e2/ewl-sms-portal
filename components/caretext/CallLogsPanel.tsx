@@ -7,6 +7,7 @@ type CallLog = {
   id: string;
   phone: string;
   status: string;
+  direction?: string | null;
   durationSeconds: number | null;
   startedAt: string;
   endedAt: string | null;
@@ -55,9 +56,13 @@ export function CallLogsPanel({ callLogs }: CallLogsPanelProps) {
                 </span>
                 {duration ? <span className="text-[11px] text-muted">{duration}</span> : null}
               </div>
-              <p className="mt-1 text-sm text-slate-900">{callLog.phone}</p>
+              <p className="mt-1 text-sm text-slate-900">
+                {callLog.direction === "inbound" ? "Incoming" : "Outbound"} · {callLog.phone}
+              </p>
               <p className="mt-1 text-[11px] text-muted">
-                {callLog.initiatedBy?.name ?? "Unknown"} · {formatMessageTime(callLog.startedAt)}
+                {callLog.initiatedBy?.name ??
+                  (callLog.direction === "inbound" ? "Missed" : "Unknown")}{" "}
+                · {formatMessageTime(callLog.startedAt)}
               </p>
             </div>
           );

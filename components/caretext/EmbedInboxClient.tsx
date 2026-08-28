@@ -8,6 +8,7 @@ import { GroupComposerArea } from "@/components/caretext/GroupComposerArea";
 import { NewGroupConversationModal } from "@/components/caretext/NewGroupConversationModal";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
+import { IncomingCallBar } from "@/components/caretext/IncomingCallBar";
 import { EmbedConversationHeader } from "@/components/caretext/EmbedConversationHeader";
 import { EmbedNewConversationForm } from "@/components/caretext/EmbedNewConversationForm";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
@@ -742,6 +743,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
   return (
     <VoiceCallProvider>
       <div className="flex h-[calc(100dvh-1rem)] min-h-0 flex-col gap-3 overflow-hidden lg:hidden">
+        <IncomingCallBar onAccepted={handleSelectConversation} />
         {!showConversationPane ? (
           <aside className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
             {listAside}
@@ -760,7 +762,9 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
         )}
       </div>
 
-      <div className="hidden h-[calc(100dvh-1rem)] min-h-0 gap-4 overflow-hidden lg:flex">
+      <div className="hidden h-[calc(100dvh-1rem)] min-h-0 flex-col gap-3 overflow-hidden lg:flex">
+        <IncomingCallBar onAccepted={handleSelectConversation} />
+        <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
         <aside className="flex min-h-0 w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">{listAside}</div>
         </aside>
@@ -774,6 +778,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
             </div>
           )}
         </section>
+        </div>
       </div>
 
       <NewGroupConversationModal

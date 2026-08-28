@@ -14,6 +14,7 @@ import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
 import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
+import { IncomingCallBar } from "@/components/caretext/IncomingCallBar";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { mergeMessages, useConversationDetail } from "@/hooks/useConversationDetail";
 import { getConversationsListRevision } from "@/lib/conversation-revision";
@@ -769,6 +770,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   return (
     <VoiceCallProvider>
       <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-3 overflow-hidden lg:hidden">
+        <IncomingCallBar onAccepted={handleSelectConversation} />
         {!showConversationPane ? (
           <aside className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
             <input
@@ -960,7 +962,9 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         )}
       </div>
 
-      <div className="hidden h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-hidden lg:flex">
+      <div className="hidden h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-3 overflow-hidden lg:flex">
+        <IncomingCallBar onAccepted={handleSelectConversation} />
+        <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
         <aside className="flex min-h-0 w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
           <input
             value={search}
@@ -1103,6 +1107,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
             <CallLogsPanel callLogs={activeConversation?.callLogs ?? []} />
           </div>
         </section>
+        </div>
       </div>
 
       <NewGroupConversationModal
