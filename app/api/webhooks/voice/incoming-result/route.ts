@@ -7,6 +7,17 @@ import {
   validateTwilioWebhookRequest,
 } from "@/lib/voice/webhook";
 
+function twimlOk() {
+  return new NextResponse("<Response></Response>", {
+    status: 200,
+    headers: { "Content-Type": "text/xml" },
+  });
+}
+
+export async function GET() {
+  return twimlOk();
+}
+
 export async function POST(request: Request) {
   const params = await parseTwilioWebhookParams(request);
   const signature = request.headers.get("x-twilio-signature");
@@ -26,7 +37,7 @@ export async function POST(request: Request) {
       : undefined;
 
   if (!callLogId || !dialCallStatus) {
-    return NextResponse.json({ ok: true, skipped: true });
+    return twimlOk();
   }
 
   const callLog = await prisma.callLog.findUnique({
@@ -35,7 +46,7 @@ export async function POST(request: Request) {
   });
 
   if (!callLog) {
-    return NextResponse.json({ ok: true, skipped: true });
+    return twimlOk();
   }
 
   const nextStatus = inboundDialResultStatus({
@@ -45,7 +56,7 @@ export async function POST(request: Request) {
   });
 
   if (!nextStatus) {
-    return NextResponse.json({ ok: true, skipped: true });
+    return twimlOk();
   }
 
   await prisma.callLog.update({
@@ -58,5 +69,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true });
+  return twimlOk();
 }

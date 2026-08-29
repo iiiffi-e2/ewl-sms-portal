@@ -4,6 +4,7 @@ import {
   buildInboundClientDialTwiml,
   buildOutboundDialTwiml,
   getInboundDialActionUrl,
+  inboundResultActionUrl,
 } from "@/lib/voice/twiml";
 
 describe("buildOutboundDialTwiml", () => {
@@ -111,6 +112,41 @@ describe("getInboundDialActionUrl", () => {
   it("builds the incoming-result webhook URL with callLogId", () => {
     expect(getInboundDialActionUrl("log-1")).toBe(
       "https://app.example.com/api/webhooks/voice/incoming-result?callLogId=log-1",
+    );
+  });
+
+  it("upgrades http NEXTAUTH_URL to https so Twilio does not follow a redirect as GET", () => {
+    process.env.NEXTAUTH_URL = "http://caretext.eyewatchlive.com";
+    expect(getInboundDialActionUrl("log-1")).toBe(
+      "https://caretext.eyewatchlive.com/api/webhooks/voice/incoming-result?callLogId=log-1",
+    );
+  });
+
+  it("keeps http for localhost development", () => {
+    process.env.NEXTAUTH_URL = "http://localhost:3000";
+    expect(getInboundDialActionUrl("log-1")).toBe(
+      "http://localhost:3000/api/webhooks/voice/incoming-result?callLogId=log-1",
+    );
+  });
+});
+
+describe("inboundResultActionUrl", () => {
+  it("builds the result URL from the inbound request host and forces https", () => {
+    expect(
+      inboundResultActionUrl(
+        "https://caretext.eyewatchlive.com/api/webhooks/voice/incoming",
+        "log-1",
+      ),
+    ).toBe(
+      "https://caretext.eyewatchlive.com/api/webhooks/voice/incoming-result?callLogId=log-1",
+    );
+    expect(
+      inboundResultActionUrl(
+        "http://caretext.eyewatchlive.com/api/webhooks/voice/incoming",
+        "log-1",
+      ),
+    ).toBe(
+      "https://caretext.eyewatchlive.com/api/webhooks/voice/incoming-result?callLogId=log-1",
     );
   });
 });

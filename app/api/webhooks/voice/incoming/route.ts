@@ -7,7 +7,7 @@ import { listInboundRingIdentities } from "@/lib/voice/presence-query";
 import {
   buildHangupTwiml,
   buildInboundClientDialTwiml,
-  getInboundDialActionUrl,
+  inboundResultActionUrl,
 } from "@/lib/voice/twiml";
 import {
   getWebhookRequestUrl,
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     conversationId: conversation.id,
     contactName: contact.name,
     phone: normalizedPhone,
-    actionUrl: getInboundDialActionUrl(callLog.id),
+    actionUrl: inboundResultActionUrl(url, callLog.id),
   });
 
   return twimlResponse(twiml);
