@@ -6,7 +6,20 @@ function getVoiceBaseUrl() {
   if (!baseUrl) {
     throw new Error("NEXTAUTH_URL is not configured.");
   }
-  return baseUrl.replace(/\/$/, "");
+
+  const normalized = baseUrl.replace(/\/$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error("NEXTAUTH_URL is not a valid URL.");
+  }
+
+  const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  if (parsed.protocol === "http:" && !isLocal) {
+    parsed.protocol = "https:";
+  }
+  return parsed.origin;
 }
 
 export function getVoiceStatusCallbackUrl() {
@@ -15,6 +28,20 @@ export function getVoiceStatusCallbackUrl() {
 
 export function getInboundDialActionUrl(callLogId: string) {
   return `${getVoiceBaseUrl()}/api/webhooks/voice/incoming-result?callLogId=${encodeURIComponent(callLogId)}`;
+}
+
+export function inboundResultActionUrl(incomingRequestUrl: string, callLogId: string) {
+  const incomingUrl = new URL(incomingRequestUrl);
+  incomingUrl.pathname = "/api/webhooks/voice/incoming-result";
+  incomingUrl.search = `callLogId=${encodeURIComponent(callLogId)}`;
+  if (
+    incomingUrl.protocol === "http:" &&
+    incomingUrl.hostname !== "localhost" &&
+    incomingUrl.hostname !== "127.0.0.1"
+  ) {
+    incomingUrl.protocol = "https:";
+  }
+  return incomingUrl.toString();
 }
 
 export const INBOUND_DIAL_TIMEOUT_SECONDS = 25;
