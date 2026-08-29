@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_INBOUND_RING_TARGETS,
   PRESENCE_FRESH_MS,
+  selectFallbackRingIdentities,
   selectInboundRingIdentities,
 } from "@/lib/voice/presence";
 
@@ -67,5 +68,20 @@ describe("selectInboundRingIdentities", () => {
     expect(identities[0]).toBe("user-0");
     expect(identities[9]).toBe("user-9");
     expect(identities).not.toContain("user-10");
+  });
+});
+
+describe("selectFallbackRingIdentities", () => {
+  it("returns enabled users who are not busy, capped at MAX_INBOUND_RING_TARGETS", () => {
+    const userIds = Array.from({ length: MAX_INBOUND_RING_TARGETS + 2 }, (_, index) => `user-${index}`);
+    const identities = selectFallbackRingIdentities({
+      userIds,
+      busyUserIds: new Set(["user-1"]),
+    });
+
+    expect(identities).toHaveLength(MAX_INBOUND_RING_TARGETS);
+    expect(identities).not.toContain("user-1");
+    expect(identities[0]).toBe("user-0");
+    expect(identities[1]).toBe("user-2");
   });
 });

@@ -310,9 +310,16 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
 
     await device.register();
     deviceRef.current = device;
-    startHeartbeat();
     scheduleTokenRefresh(() => refreshDeviceTokenRef.current());
-  }, [clearIncoming, scheduleTokenRefresh, startHeartbeat]);
+  }, [clearIncoming, scheduleTokenRefresh]);
+
+  useEffect(() => {
+    startHeartbeat();
+    return () => {
+      clearHeartbeat();
+      void clearPresence().catch(() => undefined);
+    };
+  }, [clearHeartbeat, startHeartbeat]);
 
   useEffect(() => {
     let cancelled = false;
@@ -328,13 +335,11 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearTimer();
       clearRefreshTimer();
-      clearHeartbeat();
-      void clearPresence().catch(() => undefined);
       deviceRef.current?.destroy();
       deviceRef.current = null;
       tokenExpiresAtRef.current = null;
     };
-  }, [clearHeartbeat, clearRefreshTimer, clearTimer, setupDevice]);
+  }, [clearRefreshTimer, clearTimer, setupDevice]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -342,14 +347,14 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      void pingPresence().catch((error) => {
+        console.error("Failed to publish voice presence after tab became visible:", error);
+      });
+
       const expiresAt = tokenExpiresAtRef.current;
       if (!deviceRef.current || !expiresAt) {
         return;
       }
-
-      void pingPresence().catch((error) => {
-        console.error("Failed to publish voice presence after tab became visible:", error);
-      });
 
       if (Date.now() >= expiresAt - TOKEN_REFRESH_BUFFER_MS) {
         refreshDeviceToken().catch((error) => {
