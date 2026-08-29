@@ -1,4 +1,4 @@
-export const PRESENCE_FRESH_MS = 45_000;
+export const PRESENCE_FRESH_MS = 3 * 60 * 1000;
 export const PRESENCE_HEARTBEAT_MS = 15_000;
 export const MAX_INBOUND_RING_TARGETS = 10;
 
@@ -22,4 +22,13 @@ export function selectInboundRingIdentities(input: {
     .sort((left, right) => right.lastSeenAt.getTime() - left.lastSeenAt.getTime())
     .slice(0, MAX_INBOUND_RING_TARGETS)
     .map((row) => row.userId);
+}
+
+export function selectFallbackRingIdentities(input: {
+  userIds: string[];
+  busyUserIds: Set<string>;
+}): string[] {
+  return input.userIds
+    .filter((userId) => !input.busyUserIds.has(userId))
+    .slice(0, MAX_INBOUND_RING_TARGETS);
 }
