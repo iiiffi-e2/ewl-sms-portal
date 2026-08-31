@@ -12,7 +12,7 @@ import {
 } from "react";
 import { Device, Call } from "@twilio/voice-sdk";
 import { PRESENCE_HEARTBEAT_MS } from "@/lib/voice/presence";
-import { parseIncomingInvite } from "@/lib/voice/incoming-invite";
+import { completeIncomingInvite, parseIncomingInvite } from "@/lib/voice/incoming-invite";
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
@@ -44,12 +44,14 @@ async function resolveIncomingInvite(call: Call): Promise<IncomingCallInfo | nul
     parameters: call.parameters,
   });
 
-  let callLogId = parsed.callLogId;
-  let conversationId = parsed.conversationId;
-  let phone = parsed.phone;
-  let contactName = parsed.contactName;
+  let ringing: {
+    callLogId?: string;
+    conversationId?: string | null;
+    phone?: string;
+    contactName?: string | null;
+  } | null = null;
 
-  if (!callLogId || !conversationId || !phone) {
+  if (!parsed.callLogId || !parsed.phone) {
     try {
       const response = await fetch("/api/calls/ringing");
       if (response.ok) {
@@ -61,24 +63,14 @@ async function resolveIncomingInvite(call: Call): Promise<IncomingCallInfo | nul
             contactName?: string | null;
           } | null;
         };
-        const ringing = data.callLog;
-        if (ringing) {
-          callLogId = callLogId ?? ringing.callLogId;
-          conversationId = conversationId ?? ringing.conversationId ?? undefined;
-          phone = phone ?? ringing.phone;
-          contactName = contactName ?? ringing.contactName ?? null;
-        }
+        ringing = data.callLog ?? null;
       }
     } catch {
-      // Keep whatever TwiML / Call parameters we already have.
+      ringing = null;
     }
   }
 
-  if (!callLogId || !conversationId || !phone) {
-    return null;
-  }
-
-  return { callLogId, conversationId, phone, contactName };
+  return completeIncomingInvite(parsed, ringing);
 }
 
 async function pingPresence() {
@@ -100,7 +92,7 @@ type CallPhase =
 
 type ActiveCallInfo = {
   callLogId: string;
-  conversationId: string;
+  conversationId: string | null;
   phone: string;
   contactName?: string | null;
 };
@@ -116,8 +108,8 @@ type VoiceCallContextValue = {
   incomingCall: IncomingCallInfo | null;
   errorMessage: string | null;
   startCall: (input: {
-    conversationId: string;
     phone: string;
+    conversationId?: string | null;
     contactName?: string | null;
   }) => Promise<void>;
   acceptIncoming: () => Promise<string | null>;
@@ -436,7 +428,11 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
   );
 
   const startCall = useCallback(
-    async (input: { conversationId: string; phone: string; contactName?: string | null }) => {
+    async (input: {
+      phone: string;
+      conversationId?: string | null;
+      contactName?: string | null;
+    }) => {
       if (!deviceRef.current) {
         return;
       }
@@ -469,10 +465,11 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
         const initiateResponse = await fetch("/api/calls/initiate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversationId: input.conversationId,
-            phone: input.phone,
-          }),
+          body: JSON.stringify(
+            input.conversationId
+              ? { conversationId: input.conversationId, phone: input.phone }
+              : { phone: input.phone },
+          ),
         });
 
         if (!initiateResponse.ok) {
@@ -482,19 +479,21 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
 
         const initiateData = await initiateResponse.json();
         callLogId = initiateData.callLogId as string;
+        const conversationId =
+          (initiateData.conversationId as string | null | undefined) ?? input.conversationId ?? null;
 
         setActiveCall({
           callLogId,
-          conversationId: input.conversationId,
+          conversationId,
           phone: input.phone,
-          contactName: input.contactName,
+          contactName: (initiateData.contactName as string | null | undefined) ?? input.contactName,
         });
 
         const call = await deviceRef.current.connect({
           params: {
             To: input.phone,
             callLogId,
-            conversationId: input.conversationId,
+            ...(conversationId ? { conversationId } : {}),
           },
         });
 

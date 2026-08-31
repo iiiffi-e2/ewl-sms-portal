@@ -15,7 +15,9 @@ export function GlobalIncomingCallBar() {
   return (
     <IncomingCallBar
       onAccepted={(conversationId) => {
-        router.push(`/dashboard?conversationId=${conversationId}`);
+        if (conversationId) {
+          router.push(`/dashboard?conversationId=${conversationId}`);
+        }
       }}
     />
   );
