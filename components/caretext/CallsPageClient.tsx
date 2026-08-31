@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
 import { formatCallDuration, formatCallStatusLabel } from "@/lib/call-log-display";
-import { canSaveContactFromCallLog, type CallLogListItem } from "@/lib/voice/call-log-list";
+import { formatDialerDisplay } from "@/lib/dialer";
 import { formatMessageTime } from "@/lib/format";
+import { canSaveContactFromCallLog, type CallLogListItem } from "@/lib/voice/call-log-list";
 
 export function CallsPageClient() {
   const { startCall, isCallActive, errorMessage } = useVoiceCall();
@@ -69,71 +70,98 @@ export function CallsPageClient() {
       {callLogs && callLogs.length === 0 ? (
         <p className="text-sm text-muted">No calls yet.</p>
       ) : null}
-      <div className="space-y-2">
-        {callLogs?.map((log) => {
-          const duration = formatCallDuration(log.durationSeconds);
-          const showSave = canSaveContactFromCallLog({
-            hasContact: Boolean(log.contact),
-            status: log.status,
-          });
-          const nameNode = log.contact ? (
-            log.conversationId ? (
-              <Link
-                href={`/dashboard?conversationId=${log.conversationId}`}
-                className="font-medium text-emerald-800 underline"
-              >
-                {log.contact.name || log.phone}
-              </Link>
-            ) : (
-              <Link href="/contacts" className="font-medium text-emerald-800 underline">
-                {log.contact.name || log.phone}
-              </Link>
-            )
-          ) : (
-            <span className="font-medium">{log.phone}</span>
-          );
+      {callLogs && callLogs.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="min-w-full border-collapse text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-muted">
+              <tr>
+                <th className="whitespace-nowrap px-3 py-2">Direction</th>
+                <th className="whitespace-nowrap px-3 py-2">Number</th>
+                <th className="whitespace-nowrap px-3 py-2">Staff</th>
+                <th className="whitespace-nowrap px-3 py-2">Time</th>
+                <th className="whitespace-nowrap px-3 py-2">Duration</th>
+                <th className="whitespace-nowrap px-3 py-2">Status</th>
+                <th className="whitespace-nowrap px-3 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {callLogs.map((log) => {
+                const duration = formatCallDuration(log.durationSeconds);
+                const showSave = canSaveContactFromCallLog({
+                  hasContact: Boolean(log.contact),
+                  status: log.status,
+                });
+                const displayPhone = formatDialerDisplay(log.phone);
+                const contactLabel = log.contact?.name || displayPhone;
 
-          return (
-            <article key={log.id} className="rounded-lg border border-border bg-slate-50 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs capitalize text-muted">
-                  {log.direction === "inbound" ? "Incoming" : "Outbound"}
-                </span>
-                <span className="text-xs capitalize text-muted">{formatCallStatusLabel(log.status)}</span>
-                {duration ? <span className="text-xs text-muted">{duration}</span> : null}
-              </div>
-              <p className="mt-1 text-sm">{nameNode}</p>
-              <p className="text-[11px] text-muted">
-                {log.initiatedBy?.name ?? (log.direction === "inbound" ? "Missed" : "Unknown")}{" "}
-                · {formatMessageTime(log.startedAt)}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={isCallActive}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => void startCall({ phone: log.phone, contactName: log.contact?.name })}
-                >
-                  Redial
-                </button>
-                {showSave ? (
-                  <button
-                    type="button"
-                    className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm"
-                    onClick={() => {
-                      setSaveFor(log);
-                      setSaveName(log.contact?.name ?? "");
-                      setSaveError(null);
-                    }}
-                  >
-                    Save contact
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          );
-        })}
-      </div>
+                return (
+                  <tr key={log.id} className="bg-white hover:bg-slate-50">
+                    <td className="whitespace-nowrap px-3 py-2 text-muted">
+                      {log.direction === "inbound" ? "Incoming" : "Outbound"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {log.contact ? (
+                        <Link
+                          href={
+                            log.conversationId
+                              ? `/dashboard?conversationId=${log.conversationId}`
+                              : "/contacts"
+                          }
+                          className="font-medium text-emerald-800 underline"
+                        >
+                          {contactLabel}
+                        </Link>
+                      ) : (
+                        <span className="font-medium">{displayPhone}</span>
+                      )}
+                      {log.contact?.name ? (
+                        <p className="text-[11px] text-muted">{displayPhone}</p>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted">
+                      {log.initiatedBy?.name ?? (log.direction === "inbound" ? "Missed" : "Unknown")}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted">
+                      {formatMessageTime(log.startedAt)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted">{duration ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 capitalize text-muted">
+                      {formatCallStatusLabel(log.status)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isCallActive}
+                          className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() =>
+                            void startCall({ phone: log.phone, contactName: log.contact?.name })
+                          }
+                        >
+                          Redial
+                        </button>
+                        {showSave ? (
+                          <button
+                            type="button"
+                            className="rounded-md border border-border bg-white px-2 py-1 text-xs"
+                            onClick={() => {
+                              setSaveFor(log);
+                              setSaveName(log.contact?.name ?? "");
+                              setSaveError(null);
+                            }}
+                          >
+                            Save contact
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       {saveFor ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
