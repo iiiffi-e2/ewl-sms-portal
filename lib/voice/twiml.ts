@@ -69,7 +69,7 @@ export function buildOutboundDialTwiml(
 export function buildInboundClientDialTwiml(input: {
   identities: string[];
   callLogId: string;
-  conversationId: string | null | undefined;
+  conversationId?: string | null;
   contactName?: string | null;
   phone: string;
   actionUrl: string;
@@ -86,7 +86,9 @@ export function buildInboundClientDialTwiml(input: {
     const client = dial.client();
     client.identity(identity);
     client.parameter({ name: "callLogId", value: input.callLogId });
-    client.parameter({ name: "conversationId", value: input.conversationId ?? "" });
+    if (input.conversationId) {
+      client.parameter({ name: "conversationId", value: input.conversationId });
+    }
     client.parameter({ name: "contactName", value: input.contactName ?? "" });
     client.parameter({ name: "phone", value: input.phone });
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseIncomingInvite } from "@/lib/voice/incoming-invite";
+import { completeIncomingInvite, parseIncomingInvite } from "@/lib/voice/incoming-invite";
 
 describe("parseIncomingInvite", () => {
   it("reads TwiML custom parameters", () => {
@@ -47,6 +47,46 @@ describe("parseIncomingInvite", () => {
       callLogId: undefined,
       conversationId: undefined,
       phone: undefined,
+      contactName: null,
+    });
+  });
+});
+
+describe("completeIncomingInvite", () => {
+  it("accepts a ringing fallback without conversationId", () => {
+    expect(
+      completeIncomingInvite(
+        parseIncomingInvite({
+          customParameters: new Map([
+            ["callLogId", "log-9"],
+            ["phone", "+15551112222"],
+          ]),
+        }),
+      ),
+    ).toEqual({
+      callLogId: "log-9",
+      conversationId: null,
+      phone: "+15551112222",
+      contactName: null,
+    });
+  });
+
+  it("returns null without callLogId or phone", () => {
+    expect(completeIncomingInvite(parseIncomingInvite({}))).toBeNull();
+  });
+
+  it("fills missing fields from the ringing endpoint payload", () => {
+    expect(
+      completeIncomingInvite(parseIncomingInvite({}), {
+        callLogId: "log-3",
+        conversationId: null,
+        phone: "+15550001111",
+        contactName: null,
+      }),
+    ).toEqual({
+      callLogId: "log-3",
+      conversationId: null,
+      phone: "+15550001111",
       contactName: null,
     });
   });
