@@ -8,6 +8,8 @@ import { formatDialerDisplay } from "@/lib/dialer";
 import { formatMessageTime } from "@/lib/format";
 import {
   DEFAULT_CALL_LOG_LIMIT,
+  buildCallLogPageItems,
+  callLogPageCount,
   canSaveContactFromCallLog,
   type CallLogListItem,
 } from "@/lib/voice/call-log-list";
@@ -185,7 +187,7 @@ export function CallsPageClient() {
             {total}
           </p>
           {total > pageSize ? (
-            <div className="flex gap-2">
+            <nav aria-label="Call log pages" className="flex flex-wrap items-center gap-1">
               <button
                 type="button"
                 disabled={page <= 1}
@@ -194,6 +196,33 @@ export function CallsPageClient() {
               >
                 Previous
               </button>
+              {buildCallLogPageItems({ page, pageCount: callLogPageCount(total, pageSize) }).map(
+                (item, index) =>
+                  item === "ellipsis" ? (
+                    <span
+                      key={`ellipsis-${index}`}
+                      className="px-1.5 text-sm text-muted"
+                      aria-hidden
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-label={`Page ${item}`}
+                      aria-current={item === page ? "page" : undefined}
+                      className={
+                        item === page
+                          ? "rounded-md border border-emerald-600 bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white"
+                          : "rounded-md border border-border bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      }
+                      onClick={() => setPage(item)}
+                    >
+                      {item}
+                    </button>
+                  ),
+              )}
               <button
                 type="button"
                 disabled={page * pageSize >= total}
@@ -202,7 +231,7 @@ export function CallsPageClient() {
               >
                 Next
               </button>
-            </div>
+            </nav>
           ) : null}
         </div>
       ) : null}

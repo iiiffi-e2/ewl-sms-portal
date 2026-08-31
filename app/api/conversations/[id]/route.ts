@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { parseConversationStatus } from "@/lib/status";
 import { getTwilioClient } from "@/lib/twilio";
 import { updateConversationSchema } from "@/lib/validators";
+import { VISIBLE_CALL_LOG_WHERE } from "@/lib/voice/call-log-list";
 import { serializeMessageForClient } from "@/lib/voice-messages";
 
 // Only the most recent slice of a thread is returned on load; older messages
@@ -59,6 +60,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             orderBy: { createdAt: "desc" },
           },
           callLogs: {
+            where: VISIBLE_CALL_LOG_WHERE,
             orderBy: { startedAt: "desc" },
             include: {
               initiatedBy: { select: { id: true, name: true } },

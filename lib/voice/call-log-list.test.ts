@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCallLogPageItems,
+  callLogPageCount,
   canSaveContactFromCallLog,
   decorateCallLogsWithContacts,
+  isPlaceholderCallLog,
   parseCallLogListLimit,
   parseCallLogListPage,
 } from "@/lib/voice/call-log-list";
@@ -57,5 +60,77 @@ describe("canSaveContactFromCallLog", () => {
     expect(canSaveContactFromCallLog({ hasContact: false, status: "no_answer" })).toBe(true);
     expect(canSaveContactFromCallLog({ hasContact: false, status: "ringing" })).toBe(false);
     expect(canSaveContactFromCallLog({ hasContact: true, status: "completed" })).toBe(false);
+  });
+});
+
+describe("callLogPageCount", () => {
+  it("returns 0 when there are no rows and otherwise rounds up", () => {
+    expect(callLogPageCount(0, 50)).toBe(0);
+    expect(callLogPageCount(50, 50)).toBe(1);
+    expect(callLogPageCount(51, 50)).toBe(2);
+  });
+});
+
+describe("buildCallLogPageItems", () => {
+  it("lists every page when there are few of them", () => {
+    expect(buildCallLogPageItems({ page: 2, pageCount: 5 })).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("keeps first, last, and neighbors with ellipses when there are many pages", () => {
+    expect(buildCallLogPageItems({ page: 1, pageCount: 12 })).toEqual([
+      1,
+      2,
+      3,
+      "ellipsis",
+      12,
+    ]);
+    expect(buildCallLogPageItems({ page: 6, pageCount: 12 })).toEqual([
+      1,
+      "ellipsis",
+      5,
+      6,
+      7,
+      "ellipsis",
+      12,
+    ]);
+    expect(buildCallLogPageItems({ page: 12, pageCount: 12 })).toEqual([
+      1,
+      "ellipsis",
+      10,
+      11,
+      12,
+    ]);
+  });
+});
+
+describe("isPlaceholderCallLog", () => {
+  it("hides stale leftovers and canceled rows that never reached Twilio", () => {
+    expect(
+      isPlaceholderCallLog({ status: "canceled", outcome: "stale", twilioSid: null }),
+    ).toBe(true);
+    expect(
+      isPlaceholderCallLog({ status: "canceled", outcome: "stale", twilioSid: "CA123" }),
+    ).toBe(true);
+    expect(
+      isPlaceholderCallLog({ status: "canceled", outcome: "canceled", twilioSid: null }),
+    ).toBe(true);
+    expect(
+      isPlaceholderCallLog({ status: "canceled", outcome: null, twilioSid: null }),
+    ).toBe(true);
+  });
+
+  it("keeps calls that reached Twilio, including a real Twilio cancel", () => {
+    expect(
+      isPlaceholderCallLog({ status: "canceled", outcome: "canceled", twilioSid: "CA123" }),
+    ).toBe(false);
+    expect(
+      isPlaceholderCallLog({ status: "completed", outcome: "completed", twilioSid: "CA123" }),
+    ).toBe(false);
+    expect(
+      isPlaceholderCallLog({ status: "no_answer", outcome: "no-staff", twilioSid: "CA123" }),
+    ).toBe(false);
+    expect(
+      isPlaceholderCallLog({ status: "initiating", outcome: null, twilioSid: null }),
+    ).toBe(false);
   });
 });
