@@ -12,7 +12,6 @@ import { NewGroupConversationModal } from "@/components/caretext/NewGroupConvers
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
-import { CallBar } from "@/components/caretext/CallBar";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { mergeMessages, useConversationDetail } from "@/hooks/useConversationDetail";
 import { getConversationsListRevision } from "@/lib/conversation-revision";
@@ -857,7 +856,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                       : undefined
                   }
                 />
-                <CallBar />
               </div>
 
               <div className="min-h-0 flex-1 overflow-hidden">
@@ -1038,7 +1036,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
                     : undefined
                 }
               />
-              <CallBar />
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
               {isLoadingDetail ? (

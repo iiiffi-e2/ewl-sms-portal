@@ -8,7 +8,7 @@ import { canSaveContactFromCallLog, type CallLogListItem } from "@/lib/voice/cal
 import { formatMessageTime } from "@/lib/format";
 
 export function CallsPageClient() {
-  const { startCall, isCallActive } = useVoiceCall();
+  const { startCall, isCallActive, errorMessage } = useVoiceCall();
   const [callLogs, setCallLogs] = useState<CallLogListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveFor, setSaveFor] = useState<CallLogListItem | null>(null);
@@ -49,9 +49,9 @@ export function CallsPageClient() {
           typeof data.error === "string" ? data.error : "Could not save contact.",
         );
       }
+      await load();
       setSaveFor(null);
       setSaveName("");
-      await load();
     } catch (saveErr) {
       setSaveError(saveErr instanceof Error ? saveErr.message : "Could not save contact.");
     } finally {
@@ -63,8 +63,9 @@ export function CallsPageClient() {
     <section className="rounded-xl border border-border bg-white p-4">
       <h1 className="text-lg font-semibold">Calls</h1>
       <p className="mb-4 text-sm text-muted">Inbound and outbound facility call history.</p>
+      {errorMessage ? <p className="text-sm text-rose-700">{errorMessage}</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
-      {!callLogs ? <p className="text-sm text-muted">Loading…</p> : null}
+      {!callLogs && !error ? <p className="text-sm text-muted">Loading…</p> : null}
       {callLogs && callLogs.length === 0 ? (
         <p className="text-sm text-muted">No calls yet.</p>
       ) : null}
