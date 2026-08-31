@@ -41,6 +41,17 @@ export function parseCallLogListLimit(raw: string | null | undefined): number {
   return Math.min(parsed, MAX_CALL_LOG_LIMIT);
 }
 
+export function parseCallLogListPage(raw: string | null | undefined): number {
+  if (raw == null || raw === "") {
+    return 1;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+  return parsed;
+}
+
 export function decorateCallLogsWithContacts(
   logs: CallLogListRow[],
   contactsByPhone: Map<string, { id: string; name: string | null }>,

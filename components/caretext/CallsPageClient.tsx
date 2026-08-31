@@ -6,7 +6,11 @@ import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
 import { formatCallDuration, formatCallStatusLabel } from "@/lib/call-log-display";
 import { formatDialerDisplay } from "@/lib/dialer";
 import { formatMessageTime } from "@/lib/format";
-import { canSaveContactFromCallLog, type CallLogListItem } from "@/lib/voice/call-log-list";
+import {
+  DEFAULT_CALL_LOG_LIMIT,
+  canSaveContactFromCallLog,
+  type CallLogListItem,
+} from "@/lib/voice/call-log-list";
 
 export function CallsPageClient() {
   const { startCall, isCallActive, errorMessage } = useVoiceCall();
@@ -16,21 +20,33 @@ export function CallsPageClient() {
   const [saveName, setSaveName] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_CALL_LOG_LIMIT);
+  const [total, setTotal] = useState(0);
 
-  const load = useCallback(async () => {
-    const response = await fetch("/api/calls");
+  const load = useCallback(async (nextPage = page) => {
+    const response = await fetch(`/api/calls?page=${nextPage}&limit=${DEFAULT_CALL_LOG_LIMIT}`);
     if (!response.ok) {
       throw new Error("Failed to load calls.");
     }
-    const data = (await response.json()) as { callLogs: CallLogListItem[] };
+    const data = (await response.json()) as {
+      callLogs: CallLogListItem[];
+      page?: number;
+      pageSize?: number;
+      total?: number;
+    };
     setCallLogs(data.callLogs);
-  }, []);
+    setPage(data.page ?? nextPage);
+    setPageSize(data.pageSize ?? DEFAULT_CALL_LOG_LIMIT);
+    setTotal(data.total ?? data.callLogs.length);
+    setError(null);
+  }, [page]);
 
   useEffect(() => {
-    void load().catch((loadError: unknown) => {
+    void load(page).catch((loadError: unknown) => {
       setError(loadError instanceof Error ? loadError.message : "Failed to load calls.");
     });
-  }, [load]);
+  }, [load, page]);
 
   async function onSaveContact() {
     if (!saveFor) {
@@ -50,7 +66,7 @@ export function CallsPageClient() {
           typeof data.error === "string" ? data.error : "Could not save contact.",
         );
       }
-      await load();
+      await load(page);
       setSaveFor(null);
       setSaveName("");
     } catch (saveErr) {
@@ -160,6 +176,34 @@ export function CallsPageClient() {
               })}
             </tbody>
           </table>
+        </div>
+      ) : null}
+      {callLogs && total > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
+          <p>
+            Showing {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of{" "}
+            {total}
+          </p>
+          {total > pageSize ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                className="rounded-md border border-border bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={page * pageSize >= total}
+                className="rounded-md border border-border bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
