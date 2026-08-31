@@ -297,7 +297,7 @@ export const updateUserSchema = z.object({
 });
 
 export const initiateCallSchema = z.object({
-  conversationId: z.string().uuid(),
+  conversationId: z.string().uuid().optional(),
   phone: z.string().min(8).refine((value) => isValidPhoneNumber(value), "Invalid phone number."),
 });
 
