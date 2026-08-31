@@ -6,6 +6,7 @@ import {
   decorateCallLogsWithContacts,
   parseCallLogListLimit,
   parseCallLogListPage,
+  VISIBLE_CALL_LOG_WHERE,
 } from "@/lib/voice/call-log-list";
 
 export async function GET(request: Request) {
@@ -20,8 +21,9 @@ export async function GET(request: Request) {
   const skip = (page - 1) * take;
 
   const [total, logs] = await prisma.$transaction([
-    prisma.callLog.count(),
+    prisma.callLog.count({ where: VISIBLE_CALL_LOG_WHERE }),
     prisma.callLog.findMany({
+      where: VISIBLE_CALL_LOG_WHERE,
       orderBy: { startedAt: "desc" },
       skip,
       take,

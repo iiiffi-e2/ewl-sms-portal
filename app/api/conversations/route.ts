@@ -15,6 +15,7 @@ import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
+import { VISIBLE_CALL_LOG_WHERE } from "@/lib/voice/call-log-list";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -316,6 +317,7 @@ export async function POST(request: Request) {
         orderBy: { createdAt: "desc" },
       },
       callLogs: {
+        where: VISIBLE_CALL_LOG_WHERE,
         orderBy: { startedAt: "desc" },
         include: {
           initiatedBy: { select: { id: true, name: true } },
