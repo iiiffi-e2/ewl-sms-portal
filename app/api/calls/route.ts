@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { ACTIVE_CONTACT_WHERE } from "@/lib/contact-soft-delete";
-import { decorateCallLogsWithContacts, parseCallLogListLimit } from "@/lib/voice/call-log-list";
+import {
+  decorateCallLogsWithContacts,
+  parseCallLogListLimit,
+  parseCallLogListPage,
+} from "@/lib/voice/call-log-list";
 
 export async function GET(request: Request) {
   const authResult = await requireSession();
@@ -12,23 +16,29 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const take = parseCallLogListLimit(searchParams.get("limit"));
+  const page = parseCallLogListPage(searchParams.get("page"));
+  const skip = (page - 1) * take;
 
-  const logs = await prisma.callLog.findMany({
-    orderBy: { startedAt: "desc" },
-    take,
-    select: {
-      id: true,
-      phone: true,
-      direction: true,
-      status: true,
-      outcome: true,
-      durationSeconds: true,
-      startedAt: true,
-      endedAt: true,
-      conversationId: true,
-      initiatedBy: { select: { id: true, name: true } },
-    },
-  });
+  const [total, logs] = await prisma.$transaction([
+    prisma.callLog.count(),
+    prisma.callLog.findMany({
+      orderBy: { startedAt: "desc" },
+      skip,
+      take,
+      select: {
+        id: true,
+        phone: true,
+        direction: true,
+        status: true,
+        outcome: true,
+        durationSeconds: true,
+        startedAt: true,
+        endedAt: true,
+        conversationId: true,
+        initiatedBy: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
 
   const phones = [...new Set(logs.map((log) => log.phone))];
   const contacts = phones.length
@@ -44,5 +54,10 @@ export async function GET(request: Request) {
     ),
   );
 
-  return NextResponse.json({ callLogs: decorateCallLogsWithContacts(logs, contactsByPhone) });
+  return NextResponse.json({
+    callLogs: decorateCallLogsWithContacts(logs, contactsByPhone),
+    page,
+    pageSize: take,
+    total,
+  });
 }

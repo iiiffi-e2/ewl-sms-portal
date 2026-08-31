@@ -3,6 +3,7 @@ import {
   canSaveContactFromCallLog,
   decorateCallLogsWithContacts,
   parseCallLogListLimit,
+  parseCallLogListPage,
 } from "@/lib/voice/call-log-list";
 
 describe("parseCallLogListLimit", () => {
@@ -11,6 +12,16 @@ describe("parseCallLogListLimit", () => {
     expect(parseCallLogListLimit("10")).toBe(10);
     expect(parseCallLogListLimit("999")).toBe(100);
     expect(parseCallLogListLimit("nope")).toBe(50);
+  });
+});
+
+describe("parseCallLogListPage", () => {
+  it("defaults to page 1 and rejects invalid values", () => {
+    expect(parseCallLogListPage(null)).toBe(1);
+    expect(parseCallLogListPage("3")).toBe(3);
+    expect(parseCallLogListPage("0")).toBe(1);
+    expect(parseCallLogListPage("-2")).toBe(1);
+    expect(parseCallLogListPage("nope")).toBe(1);
   });
 });
 
