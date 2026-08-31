@@ -91,6 +91,12 @@ export function DialerModal() {
   }
 
   const canCall = canPlaceDialerCall(raw) && !isCallActive && !isStarting;
+  const showActiveCallConflict =
+    !isStarting &&
+    isCallActive &&
+    callPhase !== "connecting" &&
+    callPhase !== "error" &&
+    callPhase !== "idle";
 
   async function onCall() {
     if (!canPlaceDialerCall(raw) || isCallActive || isStarting) {
@@ -168,7 +174,9 @@ export function DialerModal() {
             Call
           </button>
         </div>
-        {isCallActive ? <p className="mt-2 text-sm text-amber-700">You already have an active call.</p> : null}
+        {showActiveCallConflict ? (
+          <p className="mt-2 text-sm text-amber-700">You already have an active call.</p>
+        ) : null}
         {lookupError || errorMessage ? (
           <p className="mt-2 text-sm text-rose-700">{lookupError || errorMessage}</p>
         ) : null}
