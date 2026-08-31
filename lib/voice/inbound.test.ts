@@ -1,6 +1,10 @@
 import { CallDirection, CallStatus } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { canClaimInboundCall, inboundDialResultStatus } from "@/lib/voice/inbound";
+import {
+  canClaimInboundCall,
+  inboundDialResultStatus,
+  shouldEscalateConversationForMissedInbound,
+} from "@/lib/voice/inbound";
 
 describe("inboundDialResultStatus", () => {
   it("maps unclaimed ringing calls to no_answer on no-answer", () => {
@@ -102,6 +106,38 @@ describe("canClaimInboundCall", () => {
         direction: CallDirection.inbound,
         status: CallStatus.ringing,
         endedAt: new Date(),
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldEscalateConversationForMissedInbound", () => {
+  it("escalates unclaimed missed inbound outcomes", () => {
+    expect(
+      shouldEscalateConversationForMissedInbound({
+        initiatedById: null,
+        nextCallStatus: CallStatus.no_answer,
+      }),
+    ).toBe(true);
+    expect(
+      shouldEscalateConversationForMissedInbound({
+        initiatedById: null,
+        nextCallStatus: CallStatus.busy,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not escalate answered or in-progress calls", () => {
+    expect(
+      shouldEscalateConversationForMissedInbound({
+        initiatedById: "user-1",
+        nextCallStatus: CallStatus.no_answer,
+      }),
+    ).toBe(false);
+    expect(
+      shouldEscalateConversationForMissedInbound({
+        initiatedById: null,
+        nextCallStatus: CallStatus.completed,
       }),
     ).toBe(false);
   });

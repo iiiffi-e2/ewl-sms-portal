@@ -12,9 +12,7 @@ import { NewGroupConversationModal } from "@/components/caretext/NewGroupConvers
 import { ContactDetailsCard } from "@/components/caretext/ContactDetailsCard";
 import { InternalNotesPanel } from "@/components/caretext/InternalNotesPanel";
 import { CallLogsPanel } from "@/components/caretext/CallLogsPanel";
-import { VoiceCallProvider } from "@/components/caretext/VoiceCallProvider";
 import { CallBar } from "@/components/caretext/CallBar";
-import { IncomingCallBar } from "@/components/caretext/IncomingCallBar";
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { mergeMessages, useConversationDetail } from "@/hooks/useConversationDetail";
 import { getConversationsListRevision } from "@/lib/conversation-revision";
@@ -115,6 +113,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     updateActiveConversation,
     removeCachedConversation,
   } = useConversationDetail(initialConversationId);
+  const lastUrlConversationIdRef = useRef(initialConversationId);
   const seenInboundMessageIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedInboundSnapshotRef = useRef(false);
   const conversationsRevisionRef = useRef("");
@@ -192,6 +191,14 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+
+  useEffect(() => {
+    if (!initialConversationId || lastUrlConversationIdRef.current === initialConversationId) {
+      return;
+    }
+    lastUrlConversationIdRef.current = initialConversationId;
+    selectConversation(initialConversationId);
+  }, [initialConversationId, selectConversation]);
 
   useEffect(() => {
     const tick = async () => {
@@ -768,9 +775,8 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   );
 
   return (
-    <VoiceCallProvider>
+    <>
       <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-3 overflow-hidden lg:hidden">
-        <IncomingCallBar onAccepted={handleSelectConversation} />
         {!showConversationPane ? (
           <aside className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
             <input
@@ -963,7 +969,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       </div>
 
       <div className="hidden h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-3 overflow-hidden lg:flex">
-        <IncomingCallBar onAccepted={handleSelectConversation} />
         <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
         <aside className="flex min-h-0 w-[360px] flex-col gap-3 rounded-xl border border-border bg-slate-50 p-3">
           <input
@@ -1115,6 +1120,6 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         onClose={() => setIsNewGroupOpen(false)}
         onCreated={handleGroupCreated}
       />
-    </VoiceCallProvider>
+    </>
   );
 }

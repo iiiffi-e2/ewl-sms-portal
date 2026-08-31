@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { inboundDialResultStatus } from "@/lib/voice/inbound";
+import { ConversationStatus } from "@prisma/client";
+import { inboundDialResultStatus, shouldEscalateConversationForMissedInbound } from "@/lib/voice/inbound";
 import {
   getWebhookRequestUrl,
   parseTwilioWebhookParams,
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
 
   const callLog = await prisma.callLog.findUnique({
     where: { id: callLogId },
-    select: { id: true, status: true, initiatedById: true, endedAt: true },
+    select: { id: true, status: true, initiatedById: true, endedAt: true, conversationId: true },
   });
 
   if (!callLog) {
@@ -68,6 +69,22 @@ export async function POST(request: Request) {
       ...(Number.isFinite(duration) ? { durationSeconds: duration } : {}),
     },
   });
+
+  if (
+    callLog.conversationId &&
+    shouldEscalateConversationForMissedInbound({
+      initiatedById: callLog.initiatedById,
+      nextCallStatus: nextStatus,
+    })
+  ) {
+    await prisma.conversation.update({
+      where: { id: callLog.conversationId },
+      data: {
+        status: ConversationStatus.escalated,
+        lastMessageAt: new Date(),
+      },
+    });
+  }
 
   return twimlOk();
 }
