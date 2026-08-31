@@ -14,7 +14,7 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"] as con
 
 export function DialerModal() {
   const { isOpen, closeDialer } = useDialer();
-  const { startCall, isCallActive, errorMessage } = useVoiceCall();
+  const { startCall, isCallActive, callPhase, errorMessage } = useVoiceCall();
   const [raw, setRaw] = useState("");
   const [contactName, setContactName] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -72,11 +72,17 @@ export function DialerModal() {
     return () => controller.abort();
   }, [isOpen, raw]);
 
+  // Close only once the call is audibly in progress — not on "connecting",
+  // so initiate/connect failures can still surface errorMessage in the modal.
   useEffect(() => {
-    if (isOpen && isCallActive) {
+    const callInProgress =
+      callPhase === "ringing" ||
+      callPhase === "connected" ||
+      callPhase === "disconnecting";
+    if (isOpen && callInProgress) {
       closeDialer();
     }
-  }, [closeDialer, isCallActive, isOpen]);
+  }, [callPhase, closeDialer, isOpen]);
 
   if (!isOpen) {
     return null;
