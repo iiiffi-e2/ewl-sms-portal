@@ -14,7 +14,7 @@ export function IncomingCallBar({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+    <div className="sticky top-0 z-50 mb-3 flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-3 shadow-md">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-indigo-950">Incoming call</p>
         <p className="text-xs text-indigo-800">

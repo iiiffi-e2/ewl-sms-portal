@@ -1,4 +1,4 @@
-import { CallDirection, CallMode, CallStatus } from "@prisma/client";
+import { CallDirection, CallMode, CallStatus, ConversationStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureOpenPhoneConversation } from "@/lib/contact-conversation";
@@ -72,6 +72,13 @@ export async function POST(request: Request) {
         status: CallStatus.no_answer,
         endedAt: new Date(),
         outcome: "no-staff",
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        status: ConversationStatus.escalated,
+        lastMessageAt: new Date(),
       },
     });
     return twimlResponse(buildHangupTwiml());

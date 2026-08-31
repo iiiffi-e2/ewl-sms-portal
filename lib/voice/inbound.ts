@@ -36,6 +36,20 @@ export function inboundDialResultStatus(input: {
   return UNCLAIMED_DIAL_STATUS_MAP[input.dialCallStatus] ?? null;
 }
 
+const MISSED_INBOUND_CALL_STATUSES = new Set<CallStatus>([
+  CallStatus.no_answer,
+  CallStatus.busy,
+  CallStatus.failed,
+  CallStatus.canceled,
+]);
+
+export function shouldEscalateConversationForMissedInbound(input: {
+  initiatedById: string | null;
+  nextCallStatus: CallStatus;
+}): boolean {
+  return input.initiatedById == null && MISSED_INBOUND_CALL_STATUSES.has(input.nextCallStatus);
+}
+
 export function canClaimInboundCall(input: {
   direction: CallDirection;
   status: CallStatus;

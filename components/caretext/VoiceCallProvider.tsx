@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Device, Call } from "@twilio/voice-sdk";
 import { PRESENCE_HEARTBEAT_MS } from "@/lib/voice/presence";
+import { parseIncomingInvite } from "@/lib/voice/incoming-invite";
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
@@ -37,9 +38,47 @@ async function fetchVoiceToken(): Promise<VoiceTokenResponse> {
   return response.json();
 }
 
-function readCallParam(call: Call, key: string): string | undefined {
-  const value = call.customParameters?.get(key);
-  return value ? value : undefined;
+async function resolveIncomingInvite(call: Call): Promise<IncomingCallInfo | null> {
+  const parsed = parseIncomingInvite({
+    customParameters: call.customParameters,
+    parameters: call.parameters,
+  });
+
+  let callLogId = parsed.callLogId;
+  let conversationId = parsed.conversationId;
+  let phone = parsed.phone;
+  let contactName = parsed.contactName;
+
+  if (!callLogId || !conversationId || !phone) {
+    try {
+      const response = await fetch("/api/calls/ringing");
+      if (response.ok) {
+        const data = (await response.json()) as {
+          callLog?: {
+            callLogId?: string;
+            conversationId?: string | null;
+            phone?: string;
+            contactName?: string | null;
+          } | null;
+        };
+        const ringing = data.callLog;
+        if (ringing) {
+          callLogId = callLogId ?? ringing.callLogId;
+          conversationId = conversationId ?? ringing.conversationId ?? undefined;
+          phone = phone ?? ringing.phone;
+          contactName = contactName ?? ringing.contactName ?? null;
+        }
+      }
+    } catch {
+      // Keep whatever TwiML / Call parameters we already have.
+    }
+  }
+
+  if (!callLogId || !conversationId || !phone) {
+    return null;
+  }
+
+  return { callLogId, conversationId, phone, contactName };
 }
 
 async function pingPresence() {
@@ -264,48 +303,39 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
     });
 
     device.on("incoming", (call) => {
-      const phase = callPhaseRef.current;
-      const busy =
-        Boolean(activeCallRef.current) ||
-        (phase !== "idle" && phase !== "error" && phase !== "incoming");
+      void (async () => {
+        const phase = callPhaseRef.current;
+        const busy =
+          Boolean(activeCallRef.current) ||
+          (phase !== "idle" && phase !== "error" && phase !== "incoming");
 
-      if (busy || incomingSdkCallRef.current) {
-        call.reject();
-        return;
-      }
-
-      const callLogId = readCallParam(call, "callLogId");
-      const conversationId = readCallParam(call, "conversationId");
-      const phone = readCallParam(call, "phone");
-      const contactName = readCallParam(call, "contactName") || null;
-
-      if (!callLogId || !conversationId || !phone) {
-        call.reject();
-        return;
-      }
-
-      const info: IncomingCallInfo = {
-        callLogId,
-        conversationId,
-        phone,
-        contactName,
-      };
-
-      incomingSdkCallRef.current = call;
-      incomingCallRef.current = info;
-      setIncomingCall(info);
-      setCallPhase("incoming");
-      setErrorMessage(null);
-
-      call.on("cancel", () => {
-        if (incomingSdkCallRef.current !== call) {
+        if (busy || incomingSdkCallRef.current) {
+          call.reject();
           return;
         }
-        clearIncoming();
-        if (callPhaseRef.current === "incoming") {
-          setCallPhase("idle");
+
+        const info = await resolveIncomingInvite(call);
+        if (!info) {
+          call.reject();
+          return;
         }
-      });
+
+        incomingSdkCallRef.current = call;
+        incomingCallRef.current = info;
+        setIncomingCall(info);
+        setCallPhase("incoming");
+        setErrorMessage(null);
+
+        call.on("cancel", () => {
+          if (incomingSdkCallRef.current !== call) {
+            return;
+          }
+          clearIncoming();
+          if (callPhaseRef.current === "incoming") {
+            setCallPhase("idle");
+          }
+        });
+      })();
     });
 
     await device.register();
