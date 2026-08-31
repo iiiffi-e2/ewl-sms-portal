@@ -1,8 +1,8 @@
 import { CallDirection, CallMode, CallStatus, ConversationStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureOpenPhoneConversation } from "@/lib/contact-conversation";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { resolveCallAttachment } from "@/lib/voice/call-attachment";
 import { listInboundRingIdentities } from "@/lib/voice/presence-query";
 import {
   buildHangupTwiml,
@@ -45,16 +45,18 @@ export async function POST(request: Request) {
     return twimlResponse(buildHangupTwiml());
   }
 
-  const { contact, conversation } = await ensureOpenPhoneConversation(normalizedPhone);
+  const attachment = await resolveCallAttachment(normalizedPhone);
 
-  await prisma.conversation.update({
-    where: { id: conversation.id },
-    data: { lastMessageAt: new Date() },
-  });
+  if (attachment.conversationId) {
+    await prisma.conversation.update({
+      where: { id: attachment.conversationId },
+      data: { lastMessageAt: new Date() },
+    });
+  }
 
   const callLog = await prisma.callLog.create({
     data: {
-      conversationId: conversation.id,
+      conversationId: attachment.conversationId,
       phone: normalizedPhone,
       twilioSid: callSid,
       direction: CallDirection.inbound,
@@ -74,21 +76,23 @@ export async function POST(request: Request) {
         outcome: "no-staff",
       },
     });
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        status: ConversationStatus.escalated,
-        lastMessageAt: new Date(),
-      },
-    });
+    if (attachment.conversationId) {
+      await prisma.conversation.update({
+        where: { id: attachment.conversationId },
+        data: {
+          status: ConversationStatus.escalated,
+          lastMessageAt: new Date(),
+        },
+      });
+    }
     return twimlResponse(buildHangupTwiml());
   }
 
   const twiml = buildInboundClientDialTwiml({
     identities,
     callLogId: callLog.id,
-    conversationId: conversation.id,
-    contactName: contact.name,
+    conversationId: attachment.conversationId,
+    contactName: attachment.contactName,
     phone: normalizedPhone,
     actionUrl: inboundResultActionUrl(url, callLog.id),
   });

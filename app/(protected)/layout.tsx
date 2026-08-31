@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { TopNav } from "@/components/caretext/TopNav";
 import { AuthProvider } from "@/components/caretext/AuthProvider";
-import { GlobalIncomingCallBar, VoiceShell } from "@/components/caretext/VoiceShell";
+import { GlobalCallBar, GlobalIncomingCallBar, VoiceShell } from "@/components/caretext/VoiceShell";
 import { prisma } from "@/lib/prisma";
 
 export default async function ProtectedLayout({
@@ -32,6 +32,7 @@ export default async function ProtectedLayout({
         <main className="mx-auto w-full max-w-[1600px] p-4">
           <TopNav isAdmin={session.user.role === "admin"} />
           <GlobalIncomingCallBar />
+          <GlobalCallBar />
           {children}
         </main>
       </VoiceShell>

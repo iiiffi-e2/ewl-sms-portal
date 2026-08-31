@@ -87,6 +87,21 @@ describe("buildInboundClientDialTwiml", () => {
     expect(xml).toContain('name="phone"');
     expect(xml).toContain('value="+15559876543"');
   });
+
+  it("omits conversationId when the inbound call has no thread", () => {
+    const xml = buildInboundClientDialTwiml({
+      identities: ["user-1"],
+      callLogId: "log-2",
+      conversationId: null,
+      phone: "+15559876543",
+      actionUrl: "https://app.example.com/api/webhooks/voice/incoming-result?callLogId=log-2",
+    });
+
+    expect(xml).toContain('name="callLogId"');
+    expect(xml).toContain('value="log-2"');
+    expect(xml).not.toContain('name="conversationId"');
+    expect(xml).toContain('name="phone"');
+  });
 });
 
 describe("buildHangupTwiml", () => {

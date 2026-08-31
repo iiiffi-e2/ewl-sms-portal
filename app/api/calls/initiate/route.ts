@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { resolveCallAttachment } from "@/lib/voice/call-attachment";
 import { activeCallWhere, expireStaleActiveCalls } from "@/lib/voice/calls";
 import { initiateCallSchema } from "@/lib/validators";
 
@@ -19,18 +20,32 @@ export async function POST(request: Request) {
   }
 
   const normalizedPhone = normalizePhoneNumber(parsed.data.phone);
+  let conversationId: string | null = null;
+  let contactName: string | null = null;
 
-  const conversation = await prisma.conversation.findFirst({
-    where: {
-      id: parsed.data.conversationId,
-      archivedAt: null,
-      contact: { phone: normalizedPhone },
-    },
-    select: { id: true },
-  });
+  if (parsed.data.conversationId) {
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        id: parsed.data.conversationId,
+        archivedAt: null,
+        contact: { phone: normalizedPhone },
+      },
+      select: {
+        id: true,
+        contact: { select: { name: true } },
+      },
+    });
 
-  if (!conversation) {
-    return NextResponse.json({ error: "Conversation not found for phone." }, { status: 404 });
+    if (!conversation) {
+      return NextResponse.json({ error: "Conversation not found for phone." }, { status: 404 });
+    }
+
+    conversationId = conversation.id;
+    contactName = conversation.contact?.name ?? null;
+  } else {
+    const attachment = await resolveCallAttachment(normalizedPhone);
+    conversationId = attachment.conversationId;
+    contactName = attachment.contactName;
   }
 
   await expireStaleActiveCalls(authResult.session.user.id);
@@ -46,7 +61,7 @@ export async function POST(request: Request) {
 
   const callLog = await prisma.callLog.create({
     data: {
-      conversationId: conversation.id,
+      conversationId,
       phone: normalizedPhone,
       initiatedById: authResult.session.user.id,
       direction: CallDirection.outbound,
@@ -56,5 +71,8 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ callLogId: callLog.id }, { status: 201 });
+  return NextResponse.json(
+    { callLogId: callLog.id, conversationId, contactName },
+    { status: 201 },
+  );
 }

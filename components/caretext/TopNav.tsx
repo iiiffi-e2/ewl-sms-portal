@@ -5,10 +5,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useId, useRef, useState } from "react";
+import { useDialer } from "@/components/caretext/DialerProvider";
+import { useVoiceCall } from "@/components/caretext/VoiceCallProvider";
 
 const navLinkClass = "block rounded-lg px-3 py-2 text-sm text-muted hover:bg-slate-50 hover:text-foreground lg:inline lg:rounded-none lg:px-0 lg:py-0 lg:hover:bg-transparent";
 
 export function TopNav({ isAdmin }: { isAdmin: boolean }) {
+  const { openDialer } = useDialer();
+  const { callPhase } = useVoiceCall();
+  const isCallUnderway = callPhase !== "idle" && callPhase !== "error";
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
@@ -52,6 +57,9 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
       <Link href="/dashboard" className={navLinkClass} onClick={() => setMenuOpen(false)}>
         Dashboard
       </Link>
+      <Link href="/calls" className={navLinkClass} onClick={() => setMenuOpen(false)}>
+        Calls
+      </Link>
       <Link href="/contacts" className={navLinkClass} onClick={() => setMenuOpen(false)}>
         Contacts
       </Link>
@@ -91,6 +99,14 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            className="hidden rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 lg:inline-flex"
+            onClick={openDialer}
+            disabled={isCallUnderway}
+          >
+            New Call
+          </button>
+          <button
+            type="button"
             className="hidden rounded-lg border border-border px-3 py-1.5 text-sm lg:inline-flex"
             onClick={() => signOut({ callbackUrl: "/login" })}
           >
@@ -127,6 +143,17 @@ export function TopNav({ isAdmin }: { isAdmin: boolean }) {
           className="mt-3 border-t border-border pt-3 lg:hidden"
         >
           <nav className="flex flex-col gap-1">{links}</nav>
+          <button
+            type="button"
+            className="mt-2 w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              setMenuOpen(false);
+              openDialer();
+            }}
+            disabled={isCallUnderway}
+          >
+            New Call
+          </button>
           <button
             type="button"
             className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-left text-sm"

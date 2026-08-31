@@ -48,3 +48,33 @@ export function parseIncomingInvite(input: IncomingInviteParams): IncomingInvite
   };
 }
 
+export type CompletedIncomingInvite = {
+  callLogId: string;
+  conversationId: string | null;
+  phone: string;
+  contactName: string | null;
+};
+
+export function completeIncomingInvite(
+  parsed: IncomingInviteInfo,
+  ringing?: {
+    callLogId?: string;
+    conversationId?: string | null;
+    phone?: string;
+    contactName?: string | null;
+  } | null,
+): CompletedIncomingInvite | null {
+  const callLogId = parsed.callLogId ?? ringing?.callLogId;
+  const phone = parsed.phone ?? ringing?.phone;
+  if (!callLogId || !phone) {
+    return null;
+  }
+
+  return {
+    callLogId,
+    conversationId: parsed.conversationId ?? ringing?.conversationId ?? null,
+    phone,
+    contactName: parsed.contactName ?? ringing?.contactName ?? null,
+  };
+}
+
