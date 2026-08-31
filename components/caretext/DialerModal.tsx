@@ -72,14 +72,16 @@ export function DialerModal() {
     return () => controller.abort();
   }, [isOpen, raw]);
 
-  // Close only once the call is audibly in progress — not on "connecting",
+  // Close for in-progress / incoming calls — not idle/error/connecting,
   // so initiate/connect failures can still surface errorMessage in the modal.
+  // Also close on "incoming" so New Call (z-60) cannot cover IncomingCallBar (z-50).
   useEffect(() => {
-    const callInProgress =
+    const shouldClose =
+      callPhase === "incoming" ||
       callPhase === "ringing" ||
       callPhase === "connected" ||
       callPhase === "disconnecting";
-    if (isOpen && callInProgress) {
+    if (isOpen && shouldClose) {
       closeDialer();
     }
   }, [callPhase, closeDialer, isOpen]);
