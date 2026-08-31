@@ -64,11 +64,21 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim();
   const smsOnly = searchParams.get("smsOnly") === "1";
+  const phoneParam = searchParams.get("phone")?.trim();
+  let exactPhone: string | null = null;
+  if (phoneParam) {
+    try {
+      exactPhone = normalizePhoneNumber(phoneParam);
+    } catch {
+      return NextResponse.json({ contacts: [] });
+    }
+  }
 
   const contacts = await prisma.contact.findMany({
     where: {
       ...ACTIVE_CONTACT_WHERE,
       ...(smsOnly ? { phone: { not: null } } : {}),
+      ...(exactPhone ? { phone: exactPhone } : {}),
       ...(q
         ? {
             OR: [
