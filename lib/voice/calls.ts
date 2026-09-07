@@ -1,6 +1,11 @@
 import { CallDirection, CallStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+export {
+  hangupCallLogPatchStatus,
+  mapPatchCallLogStatus,
+} from "@/lib/voice/call-status";
+
 const SETUP_STALE_MS = 2 * 60 * 1000;
 const IN_PROGRESS_STALE_MS = 10 * 60 * 1000;
 
@@ -80,22 +85,4 @@ export function voiceStatusWriteWhere(id: string): Prisma.CallLogWhereInput {
     id,
     status: { in: ACTIVE_CALL_STATUSES },
   };
-}
-
-export function mapPatchCallLogStatus(
-  status: "canceled" | "failed" | "completed",
-): CallStatus {
-  if (status === "canceled") {
-    return CallStatus.canceled;
-  }
-  if (status === "completed") {
-    return CallStatus.completed;
-  }
-  return CallStatus.failed;
-}
-
-export function hangupCallLogPatchStatus(
-  wasConnected: boolean,
-): "canceled" | "completed" {
-  return wasConnected ? "completed" : "canceled";
 }

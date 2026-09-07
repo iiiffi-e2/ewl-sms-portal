@@ -13,7 +13,7 @@ import {
 import { Device, Call } from "@twilio/voice-sdk";
 import { PRESENCE_HEARTBEAT_MS } from "@/lib/voice/presence";
 import { completeIncomingInvite, parseIncomingInvite } from "@/lib/voice/incoming-invite";
-import { hangupCallLogPatchStatus } from "@/lib/voice/calls";
+import { hangupCallLogPatchStatus } from "@/lib/voice/call-status";
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
@@ -263,11 +263,16 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
 
   const finalizeCallLog = useCallback(
     async (callLogId: string, status: "canceled" | "completed") => {
-      await fetch(`/api/calls/${callLogId}`, {
+      const response = await fetch(`/api/calls/${callLogId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      if (!response.ok) {
+        console.error(
+          `Failed to finalize call log ${callLogId}: ${response.status} ${response.statusText}`,
+        );
+      }
     },
     [],
   );
@@ -411,19 +416,28 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
       });
       call.on("disconnect", async () => {
         setCallPhase("disconnecting");
-        await finalizeCallLog(callLogId, hangupCallLogPatchStatus(wasConnected));
-        resetCallState();
+        try {
+          await finalizeCallLog(callLogId, hangupCallLogPatchStatus(wasConnected));
+        } finally {
+          resetCallState();
+        }
       });
       call.on("cancel", async () => {
-        await finalizeCallLog(callLogId, "canceled");
-        resetCallState();
+        try {
+          await finalizeCallLog(callLogId, "canceled");
+        } finally {
+          resetCallState();
+        }
       });
       call.on("error", async (error) => {
         console.error("Twilio Call error:", error);
         setErrorMessage(error.message);
-        await finalizeCallLog(callLogId, "canceled");
-        setCallPhase("error");
-        resetCallState();
+        try {
+          await finalizeCallLog(callLogId, "canceled");
+          setCallPhase("error");
+        } finally {
+          resetCallState();
+        }
       });
     },
     [clearTimer, finalizeCallLog, resetCallState],
@@ -505,9 +519,14 @@ export function VoiceCallProvider({ children }: { children: ReactNode }) {
         const message = error instanceof Error ? error.message : "Failed to start call.";
         setErrorMessage(message);
         if (callLogId) {
-          await finalizeCallLog(callLogId, "canceled");
+          try {
+            await finalizeCallLog(callLogId, "canceled");
+          } finally {
+            resetCallState();
+          }
+        } else {
+          resetCallState();
         }
-        resetCallState();
       }
     },
     [

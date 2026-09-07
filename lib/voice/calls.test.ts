@@ -1,5 +1,5 @@
 import { CallDirection, CallStatus } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const updateMany = vi.fn();
 
@@ -14,9 +14,11 @@ vi.mock("@/lib/prisma", () => ({
 import {
   ACTIVE_CALL_STATUSES,
   expireStaleActiveCalls,
+} from "@/lib/voice/calls";
+import {
   hangupCallLogPatchStatus,
   mapPatchCallLogStatus,
-} from "@/lib/voice/calls";
+} from "@/lib/voice/call-status";
 
 const NOW = 1_725_000_000_000;
 
@@ -25,6 +27,10 @@ describe("expireStaleActiveCalls", () => {
     updateMany.mockReset();
     updateMany.mockResolvedValue({ count: 0 });
     vi.spyOn(Date, "now").mockReturnValue(NOW);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("cancels in_progress rows older than 10 minutes", async () => {
