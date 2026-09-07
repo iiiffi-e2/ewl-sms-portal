@@ -302,7 +302,7 @@ export const initiateCallSchema = z.object({
 });
 
 export const updateCallLogSchema = z.object({
-  status: z.enum(["canceled", "failed"]),
+  status: z.enum(["canceled", "failed", "completed"]),
 });
 
 export const createGroupConversationSchema = z.object({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initiateCallSchema } from "@/lib/validators";
+import { initiateCallSchema, updateCallLogSchema } from "@/lib/validators";
 
 describe("initiateCallSchema", () => {
   it("accepts phone only", () => {
@@ -20,5 +20,18 @@ describe("initiateCallSchema", () => {
 
   it("rejects an invalid phone", () => {
     expect(initiateCallSchema.safeParse({ phone: "123" }).success).toBe(false);
+  });
+});
+
+describe("updateCallLogSchema", () => {
+  it("accepts canceled, failed, and completed", () => {
+    expect(updateCallLogSchema.safeParse({ status: "canceled" }).success).toBe(true);
+    expect(updateCallLogSchema.safeParse({ status: "failed" }).success).toBe(true);
+    expect(updateCallLogSchema.safeParse({ status: "completed" }).success).toBe(true);
+  });
+
+  it("rejects unknown statuses", () => {
+    expect(updateCallLogSchema.safeParse({ status: "in_progress" }).success).toBe(false);
+    expect(updateCallLogSchema.safeParse({ status: "stale" }).success).toBe(false);
   });
 });
