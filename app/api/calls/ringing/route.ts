@@ -2,12 +2,15 @@ import { CallDirection, CallStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
+import { expireStaleActiveCalls } from "@/lib/voice/calls";
 
 export async function GET() {
   const authResult = await requireSession();
   if ("error" in authResult) {
     return authResult.error;
   }
+
+  await expireStaleActiveCalls(authResult.session.user.id);
 
   const callLog = await prisma.callLog.findFirst({
     where: {

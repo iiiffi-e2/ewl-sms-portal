@@ -1,8 +1,8 @@
-import { CallStatus, Prisma } from "@prisma/client";
+import { CallDirection, CallStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const SETUP_STALE_MS = 2 * 60 * 1000;
-const IN_PROGRESS_STALE_MS = 4 * 60 * 60 * 1000;
+const IN_PROGRESS_STALE_MS = 10 * 60 * 1000;
 
 export async function expireStaleActiveCalls(userId: string) {
   const now = Date.now();
@@ -39,6 +39,20 @@ export async function expireStaleActiveCalls(userId: string) {
       initiatedById: userId,
       status: CallStatus.in_progress,
       startedAt: { lt: new Date(now - IN_PROGRESS_STALE_MS) },
+    },
+    data: {
+      status: CallStatus.canceled,
+      endedAt: new Date(),
+      outcome: "stale",
+    },
+  });
+
+  await prisma.callLog.updateMany({
+    where: {
+      direction: CallDirection.inbound,
+      initiatedById: null,
+      status: CallStatus.ringing,
+      startedAt: { lt: new Date(now - SETUP_STALE_MS) },
     },
     data: {
       status: CallStatus.canceled,
