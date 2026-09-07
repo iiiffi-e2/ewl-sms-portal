@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildVoiceStatusUpdate,
   mapTwilioCallStatus,
   isTerminalCallStatus,
 } from "@/lib/voice/status";
+import { voiceStatusWriteWhere } from "@/lib/voice/calls";
 import { CallStatus } from "@prisma/client";
+
+vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 
 describe("mapTwilioCallStatus", () => {
   it("maps queued and initiated to initiating", () => {
@@ -59,6 +62,17 @@ describe("isTerminalCallStatus", () => {
     expect(isTerminalCallStatus(CallStatus.in_progress)).toBe(false);
     expect(isTerminalCallStatus(CallStatus.ringing)).toBe(false);
     expect(isTerminalCallStatus(CallStatus.initiating)).toBe(false);
+  });
+});
+
+describe("voiceStatusWriteWhere", () => {
+  it("only matches the call log while its status is active", () => {
+    expect(voiceStatusWriteWhere("call-log-123")).toEqual({
+      id: "call-log-123",
+      status: {
+        in: [CallStatus.initiating, CallStatus.ringing, CallStatus.in_progress],
+      },
+    });
   });
 });
 

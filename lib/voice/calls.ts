@@ -75,6 +75,13 @@ export function activeCallWhere(userId: string): Prisma.CallLogWhereInput {
   };
 }
 
+export function voiceStatusWriteWhere(id: string): Prisma.CallLogWhereInput {
+  return {
+    id,
+    status: { in: ACTIVE_CALL_STATUSES },
+  };
+}
+
 export function mapPatchCallLogStatus(
   status: "canceled" | "failed" | "completed",
 ): CallStatus {
