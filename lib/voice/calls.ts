@@ -72,3 +72,9 @@ export function mapPatchCallLogStatus(
   }
   return CallStatus.failed;
 }
+
+export function hangupCallLogPatchStatus(
+  wasConnected: boolean,
+): "canceled" | "completed" {
+  return wasConnected ? "completed" : "canceled";
+}
