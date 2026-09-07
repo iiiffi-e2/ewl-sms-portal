@@ -60,3 +60,15 @@ export function activeCallWhere(userId: string): Prisma.CallLogWhereInput {
     status: { in: ACTIVE_CALL_STATUSES },
   };
 }
+
+export function mapPatchCallLogStatus(
+  status: "canceled" | "failed" | "completed",
+): CallStatus {
+  if (status === "canceled") {
+    return CallStatus.canceled;
+  }
+  if (status === "completed") {
+    return CallStatus.completed;
+  }
+  return CallStatus.failed;
+}
