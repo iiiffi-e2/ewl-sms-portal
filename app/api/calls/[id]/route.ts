@@ -1,7 +1,7 @@
-import { CallStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
+import { mapPatchCallLogStatus } from "@/lib/voice/calls";
 import { updateCallLogSchema } from "@/lib/validators";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -33,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const updated = await prisma.callLog.update({
     where: { id },
     data: {
-      status: parsed.data.status === "canceled" ? CallStatus.canceled : CallStatus.failed,
+      status: mapPatchCallLogStatus(parsed.data.status),
       endedAt: new Date(),
       outcome: parsed.data.status,
     },

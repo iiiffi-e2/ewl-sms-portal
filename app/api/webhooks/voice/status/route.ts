@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isTerminalCallStatus, mapTwilioCallStatus } from "@/lib/voice/status";
+import { voiceStatusWriteWhere } from "@/lib/voice/calls";
+import { buildVoiceStatusUpdate, mapTwilioCallStatus } from "@/lib/voice/status";
 import {
   getWebhookRequestUrl,
   parseTwilioWebhookParams,
@@ -29,30 +30,47 @@ export async function POST(request: Request) {
   const mappedStatus = mapTwilioCallStatus(callStatus);
 
   const callLog = callLogId
-    ? await prisma.callLog.findUnique({ where: { id: callLogId }, select: { id: true, endedAt: true } })
+    ? await prisma.callLog.findUnique({
+        where: { id: callLogId },
+        select: { id: true, endedAt: true, status: true },
+      })
     : await prisma.callLog.findFirst({
         where: { twilioSid: callSid },
-        select: { id: true, endedAt: true },
+        select: { id: true, endedAt: true, status: true },
       });
 
   if (!callLog) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  await prisma.callLog.update({
-    where: { id: callLog.id },
-    data: {
-      twilioSid: callSid,
-      status: mappedStatus,
-      outcome: callStatus,
-      ...(isTerminalCallStatus(mappedStatus)
-        ? {
-            endedAt: callLog.endedAt ?? new Date(),
-            durationSeconds: Number.isFinite(duration) ? duration : undefined,
-          }
-        : {}),
-    },
+  const data = buildVoiceStatusUpdate({
+    currentStatus: callLog.status,
+    endedAt: callLog.endedAt,
+    mappedStatus,
+    twilioOutcome: callStatus,
+    callSid,
+    durationSeconds: duration,
   });
+
+  if (!data) {
+    return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  if ("status" in data) {
+    const result = await prisma.callLog.updateMany({
+      where: voiceStatusWriteWhere(callLog.id),
+      data,
+    });
+
+    if (result.count === 0) {
+      return NextResponse.json({ ok: true, skipped: true });
+    }
+  } else {
+    await prisma.callLog.update({
+      where: { id: callLog.id },
+      data,
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }
