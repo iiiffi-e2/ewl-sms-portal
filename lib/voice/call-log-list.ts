@@ -23,6 +23,240 @@ export const VISIBLE_CALL_LOG_WHERE: Prisma.CallLogWhereInput = {
   },
 };
 
+export const CALL_LOG_STATUS_FILTER_OPTIONS: CallStatus[] = [
+  CallStatus.completed,
+  CallStatus.no_answer,
+  CallStatus.busy,
+  CallStatus.failed,
+  CallStatus.canceled,
+  CallStatus.initiating,
+  CallStatus.ringing,
+  CallStatus.in_progress,
+];
+
+const CALL_STATUS_VALUES = new Set<string>(Object.values(CallStatus));
+
+export type CallLogListQuery = {
+  q: string | null;
+  startedFrom: Date | null;
+  startedTo: Date | null;
+  minDurationSeconds: number | null;
+  maxDurationSeconds: number | null;
+  status: CallStatus | null;
+};
+
+export type ParseCallLogListQueryResult =
+  | { ok: true; query: CallLogListQuery }
+  | { ok: false; error: string };
+
+function blankToNull(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim() ?? "";
+  return trimmed ? trimmed : null;
+}
+
+function isParseError(value: unknown): value is { error: string } {
+  return typeof value === "object" && value !== null && "error" in value;
+}
+
+function parseOptionalDate(
+  raw: string | null,
+  field: "startedFrom" | "startedTo",
+): Date | null | { error: string } {
+  if (!raw) {
+    return null;
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return { error: `${field} must be a valid datetime.` };
+  }
+  return date;
+}
+
+function parseOptionalNonNegativeInt(
+  raw: string | null,
+  field: "minDurationSeconds" | "maxDurationSeconds",
+): number | null | { error: string } {
+  if (!raw) {
+    return null;
+  }
+  if (!/^\d+$/.test(raw)) {
+    return { error: `${field} must be a non-negative integer.` };
+  }
+  return Number.parseInt(raw, 10);
+}
+
+export function parseCallLogListQuery(input: {
+  q?: string | null;
+  startedFrom?: string | null;
+  startedTo?: string | null;
+  minDurationSeconds?: string | null;
+  maxDurationSeconds?: string | null;
+  status?: string | null;
+}): ParseCallLogListQueryResult {
+  const q = blankToNull(input.q);
+  const startedFromRaw = blankToNull(input.startedFrom);
+  const startedToRaw = blankToNull(input.startedTo);
+  const minRaw = blankToNull(input.minDurationSeconds);
+  const maxRaw = blankToNull(input.maxDurationSeconds);
+  const statusRaw = blankToNull(input.status);
+
+  const startedFrom = parseOptionalDate(startedFromRaw, "startedFrom");
+  if (isParseError(startedFrom)) {
+    return { ok: false, error: startedFrom.error };
+  }
+  const startedTo = parseOptionalDate(startedToRaw, "startedTo");
+  if (isParseError(startedTo)) {
+    return { ok: false, error: startedTo.error };
+  }
+  if (startedFrom && startedTo && startedFrom.getTime() > startedTo.getTime()) {
+    return { ok: false, error: "startedFrom must be on or before startedTo." };
+  }
+
+  const minDurationSeconds = parseOptionalNonNegativeInt(minRaw, "minDurationSeconds");
+  if (isParseError(minDurationSeconds)) {
+    return { ok: false, error: minDurationSeconds.error };
+  }
+  const maxDurationSeconds = parseOptionalNonNegativeInt(maxRaw, "maxDurationSeconds");
+  if (isParseError(maxDurationSeconds)) {
+    return { ok: false, error: maxDurationSeconds.error };
+  }
+  if (
+    typeof minDurationSeconds === "number" &&
+    typeof maxDurationSeconds === "number" &&
+    minDurationSeconds > maxDurationSeconds
+  ) {
+    return { ok: false, error: "minDurationSeconds must be on or before maxDurationSeconds." };
+  }
+
+  let status: CallStatus | null = null;
+  if (statusRaw) {
+    if (!CALL_STATUS_VALUES.has(statusRaw)) {
+      return { ok: false, error: "status is not a valid call status." };
+    }
+    status = statusRaw as CallStatus;
+  }
+
+  return {
+    ok: true,
+    query: {
+      q,
+      startedFrom: startedFrom ?? null,
+      startedTo: startedTo ?? null,
+      minDurationSeconds: typeof minDurationSeconds === "number" ? minDurationSeconds : null,
+      maxDurationSeconds: typeof maxDurationSeconds === "number" ? maxDurationSeconds : null,
+      status,
+    },
+  };
+}
+
+export function callLogListHasFilters(query: CallLogListQuery): boolean {
+  return Boolean(
+    query.q ||
+      query.startedFrom ||
+      query.startedTo ||
+      query.minDurationSeconds != null ||
+      query.maxDurationSeconds != null ||
+      query.status,
+  );
+}
+
+export function callLogSearchDigits(q: string): string {
+  return q.replace(/\D/g, "");
+}
+
+export function buildCallLogListWhere(
+  query: CallLogListQuery,
+  contactPhones: string[],
+): Prisma.CallLogWhereInput {
+  const clauses: Prisma.CallLogWhereInput[] = [VISIBLE_CALL_LOG_WHERE];
+
+  if (query.q) {
+    const or: Prisma.CallLogWhereInput[] = [
+      { phone: { contains: query.q, mode: "insensitive" } },
+    ];
+    const digits = callLogSearchDigits(query.q);
+    if (digits && digits !== query.q) {
+      or.push({ phone: { contains: digits, mode: "insensitive" } });
+    }
+    if (contactPhones.length > 0) {
+      or.push({ phone: { in: contactPhones } });
+    }
+    clauses.push({ OR: or });
+  }
+
+  if (query.startedFrom || query.startedTo) {
+    clauses.push({
+      startedAt: {
+        ...(query.startedFrom ? { gte: query.startedFrom } : {}),
+        ...(query.startedTo ? { lte: query.startedTo } : {}),
+      },
+    });
+  }
+
+  if (query.minDurationSeconds != null || query.maxDurationSeconds != null) {
+    clauses.push({
+      durationSeconds: {
+        not: null,
+        ...(query.minDurationSeconds != null ? { gte: query.minDurationSeconds } : {}),
+        ...(query.maxDurationSeconds != null ? { lte: query.maxDurationSeconds } : {}),
+      },
+    });
+  }
+
+  if (query.status) {
+    clauses.push({ status: query.status });
+  }
+
+  return { AND: clauses };
+}
+
+export function datetimeLocalToIso(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+export function buildCallLogListSearchParams(input: {
+  page: number;
+  limit?: number;
+  q?: string | null;
+  startedFrom?: string | null;
+  startedTo?: string | null;
+  minDurationSeconds?: string | null;
+  maxDurationSeconds?: string | null;
+  status?: string | null;
+}): string {
+  const params = new URLSearchParams();
+  params.set("page", String(input.page));
+  params.set("limit", String(input.limit ?? DEFAULT_CALL_LOG_LIMIT));
+  const q = input.q?.trim();
+  if (q) {
+    params.set("q", q);
+  }
+  if (input.startedFrom) {
+    params.set("startedFrom", input.startedFrom);
+  }
+  if (input.startedTo) {
+    params.set("startedTo", input.startedTo);
+  }
+  if (input.minDurationSeconds) {
+    params.set("minDurationSeconds", input.minDurationSeconds);
+  }
+  if (input.maxDurationSeconds) {
+    params.set("maxDurationSeconds", input.maxDurationSeconds);
+  }
+  if (input.status) {
+    params.set("status", input.status);
+  }
+  return params.toString();
+}
+
 const ACTIVE_STATUSES = new Set(["initiating", "ringing", "in_progress"]);
 
 export type CallLogListRow = {

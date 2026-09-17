@@ -3,10 +3,11 @@ import { requireSession } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { ACTIVE_CONTACT_WHERE } from "@/lib/contact-soft-delete";
 import {
+  buildCallLogListWhere,
   decorateCallLogsWithContacts,
   parseCallLogListLimit,
   parseCallLogListPage,
-  VISIBLE_CALL_LOG_WHERE,
+  parseCallLogListQuery,
 } from "@/lib/voice/call-log-list";
 
 export async function GET(request: Request) {
@@ -20,10 +21,40 @@ export async function GET(request: Request) {
   const page = parseCallLogListPage(searchParams.get("page"));
   const skip = (page - 1) * take;
 
+  const parsed = parseCallLogListQuery({
+    q: searchParams.get("q"),
+    startedFrom: searchParams.get("startedFrom"),
+    startedTo: searchParams.get("startedTo"),
+    minDurationSeconds: searchParams.get("minDurationSeconds"),
+    maxDurationSeconds: searchParams.get("maxDurationSeconds"),
+    status: searchParams.get("status"),
+  });
+
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  let contactPhones: string[] = [];
+  if (parsed.query.q) {
+    const named = await prisma.contact.findMany({
+      where: {
+        ...ACTIVE_CONTACT_WHERE,
+        name: { contains: parsed.query.q, mode: "insensitive" },
+        phone: { not: null },
+      },
+      select: { phone: true },
+    });
+    contactPhones = named
+      .map((contact) => contact.phone)
+      .filter((phone): phone is string => Boolean(phone));
+  }
+
+  const where = buildCallLogListWhere(parsed.query, contactPhones);
+
   const [total, logs] = await prisma.$transaction([
-    prisma.callLog.count({ where: VISIBLE_CALL_LOG_WHERE }),
+    prisma.callLog.count({ where }),
     prisma.callLog.findMany({
-      where: VISIBLE_CALL_LOG_WHERE,
+      where,
       orderBy: { startedAt: "desc" },
       skip,
       take,
