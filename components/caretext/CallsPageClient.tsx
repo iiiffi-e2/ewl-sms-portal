@@ -7,12 +7,17 @@ import { formatCallDuration, formatCallStatusLabel } from "@/lib/call-log-displa
 import { formatDialerDisplay } from "@/lib/dialer";
 import { formatMessageTime } from "@/lib/format";
 import {
+  CALL_LOG_STATUS_FILTER_OPTIONS,
   DEFAULT_CALL_LOG_LIMIT,
+  buildCallLogListSearchParams,
   buildCallLogPageItems,
   callLogPageCount,
   canSaveContactFromCallLog,
+  datetimeLocalToIso,
   type CallLogListItem,
 } from "@/lib/voice/call-log-list";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function CallsPageClient() {
   const { startCall, isCallActive, errorMessage } = useVoiceCall();
@@ -25,30 +30,67 @@ export function CallsPageClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_CALL_LOG_LIMIT);
   const [total, setTotal] = useState(0);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [startedFrom, setStartedFrom] = useState("");
+  const [startedTo, setStartedTo] = useState("");
+  const [minDurationSeconds, setMinDurationSeconds] = useState("");
+  const [maxDurationSeconds, setMaxDurationSeconds] = useState("");
+  const [status, setStatus] = useState("");
 
-  const load = useCallback(async (nextPage = page) => {
-    const response = await fetch(`/api/calls?page=${nextPage}&limit=${DEFAULT_CALL_LOG_LIMIT}`);
-    if (!response.ok) {
-      throw new Error("Failed to load calls.");
-    }
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [search]);
+
+  const load = useCallback(async (nextPage: number) => {
+    const params = buildCallLogListSearchParams({
+      page: nextPage,
+      q: debouncedSearch,
+      startedFrom: datetimeLocalToIso(startedFrom),
+      startedTo: datetimeLocalToIso(startedTo),
+      minDurationSeconds: minDurationSeconds.trim() || null,
+      maxDurationSeconds: maxDurationSeconds.trim() || null,
+      status: status || null,
+    });
+    const response = await fetch(`/api/calls?${params}`);
     const data = (await response.json()) as {
-      callLogs: CallLogListItem[];
+      callLogs?: CallLogListItem[];
       page?: number;
       pageSize?: number;
       total?: number;
+      error?: unknown;
     };
+    if (!response.ok) {
+      throw new Error(typeof data.error === "string" ? data.error : "Failed to load calls.");
+    }
+    if (!data.callLogs) {
+      throw new Error("Failed to load calls.");
+    }
     setCallLogs(data.callLogs);
     setPage(data.page ?? nextPage);
     setPageSize(data.pageSize ?? DEFAULT_CALL_LOG_LIMIT);
     setTotal(data.total ?? data.callLogs.length);
     setError(null);
-  }, [page]);
+  }, [debouncedSearch, startedFrom, startedTo, minDurationSeconds, maxDurationSeconds, status]);
 
   useEffect(() => {
     void load(page).catch((loadError: unknown) => {
       setError(loadError instanceof Error ? loadError.message : "Failed to load calls.");
     });
   }, [load, page]);
+
+  const hasFilters = Boolean(
+    debouncedSearch.trim() ||
+      startedFrom ||
+      startedTo ||
+      minDurationSeconds.trim() ||
+      maxDurationSeconds.trim() ||
+      status,
+  );
 
   async function onSaveContact() {
     if (!saveFor) {
@@ -81,12 +123,114 @@ export function CallsPageClient() {
   return (
     <section className="rounded-xl border border-border bg-white p-4">
       <h1 className="text-lg font-semibold">Calls</h1>
-      <p className="mb-4 text-sm text-muted">Inbound and outbound facility call history.</p>
+      <p className="text-sm text-muted">Inbound and outbound facility call history.</p>
+      <div className="mb-4 flex flex-wrap items-end gap-2">
+        <label className="min-w-[12rem] flex-1 text-sm">
+          <span className="mb-1 block text-muted">Search</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search number or name"
+            className="w-full rounded-lg border border-border px-3 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-muted">From</span>
+          <input
+            type="datetime-local"
+            value={startedFrom}
+            onChange={(event) => {
+              setStartedFrom(event.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-border px-3 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-muted">To</span>
+          <input
+            type="datetime-local"
+            value={startedTo}
+            onChange={(event) => {
+              setStartedTo(event.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-border px-3 py-2"
+          />
+        </label>
+        <label className="w-28 text-sm">
+          <span className="mb-1 block text-muted">Min sec</span>
+          <input
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={minDurationSeconds}
+            onChange={(event) => {
+              setMinDurationSeconds(event.target.value);
+              setPage(1);
+            }}
+            className="w-full rounded-lg border border-border px-3 py-2"
+          />
+        </label>
+        <label className="w-28 text-sm">
+          <span className="mb-1 block text-muted">Max sec</span>
+          <input
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={maxDurationSeconds}
+            onChange={(event) => {
+              setMaxDurationSeconds(event.target.value);
+              setPage(1);
+            }}
+            className="w-full rounded-lg border border-border px-3 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-muted">Status</span>
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPage(1);
+            }}
+            className="capitalize rounded-lg border border-border bg-white px-3 py-2"
+          >
+            <option value="">Any</option>
+            {CALL_LOG_STATUS_FILTER_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {formatCallStatusLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {hasFilters || search.trim() ? (
+          <button
+            type="button"
+            className="rounded-md border border-border bg-white px-3 py-2 text-sm"
+            onClick={() => {
+              setSearch("");
+              setDebouncedSearch("");
+              setStartedFrom("");
+              setStartedTo("");
+              setMinDurationSeconds("");
+              setMaxDurationSeconds("");
+              setStatus("");
+              setPage(1);
+            }}
+          >
+            Clear filters
+          </button>
+        ) : null}
+      </div>
       {errorMessage ? <p className="text-sm text-rose-700">{errorMessage}</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
       {!callLogs && !error ? <p className="text-sm text-muted">Loading…</p> : null}
       {callLogs && callLogs.length === 0 ? (
-        <p className="text-sm text-muted">No calls yet.</p>
+        <p className="text-sm text-muted">
+          {hasFilters ? "No calls match these filters." : "No calls yet."}
+        </p>
       ) : null}
       {callLogs && callLogs.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-border">
