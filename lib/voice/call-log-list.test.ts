@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   CALL_LOG_STATUS_FILTER_OPTIONS,
   buildCallLogListSearchParams,
+  buildCallLogListWhere,
   buildCallLogPageItems,
   callLogListHasFilters,
   callLogPageCount,
+  callLogSearchDigits,
   canSaveContactFromCallLog,
   datetimeLocalToIso,
   decorateCallLogsWithContacts,
@@ -13,6 +15,7 @@ import {
   parseCallLogListLimit,
   parseCallLogListPage,
   parseCallLogListQuery,
+  VISIBLE_CALL_LOG_WHERE,
 } from "@/lib/voice/call-log-list";
 
 describe("parseCallLogListLimit", () => {
@@ -228,6 +231,99 @@ describe("CALL_LOG_STATUS_FILTER_OPTIONS", () => {
       CallStatus.ringing,
       CallStatus.in_progress,
     ]);
+  });
+});
+
+describe("callLogSearchDigits", () => {
+  it("strips non-digits", () => {
+    expect(callLogSearchDigits("555-1234")).toBe("5551234");
+    expect(callLogSearchDigits("Ada")).toBe("");
+    expect(callLogSearchDigits("+1 (555) 000-1212")).toBe("15550001212");
+  });
+});
+
+describe("buildCallLogListWhere", () => {
+  const emptyQuery = {
+    q: null,
+    startedFrom: null,
+    startedTo: null,
+    minDurationSeconds: null,
+    maxDurationSeconds: null,
+    status: null,
+  };
+
+  it("is only the visible-log clause when there are no filters", () => {
+    expect(buildCallLogListWhere(emptyQuery, [])).toEqual({
+      AND: [VISIBLE_CALL_LOG_WHERE],
+    });
+  });
+
+  it("matches phone text, digits, and contact phones", () => {
+    const where = buildCallLogListWhere({ ...emptyQuery, q: "555-1234" }, ["+15551234567"]);
+    expect(where).toEqual({
+      AND: [
+        VISIBLE_CALL_LOG_WHERE,
+        {
+          OR: [
+            { phone: { contains: "555-1234", mode: "insensitive" } },
+            { phone: { contains: "5551234", mode: "insensitive" } },
+            { phone: { in: ["+15551234567"] } },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("does not add an empty phone in-list or duplicate identical digit query", () => {
+    const nameOnly = buildCallLogListWhere({ ...emptyQuery, q: "Ada" }, []);
+    expect(nameOnly).toEqual({
+      AND: [
+        VISIBLE_CALL_LOG_WHERE,
+        { OR: [{ phone: { contains: "Ada", mode: "insensitive" } }] },
+      ],
+    });
+    const digitsOnly = buildCallLogListWhere({ ...emptyQuery, q: "5551234" }, []);
+    expect(digitsOnly).toEqual({
+      AND: [
+        VISIBLE_CALL_LOG_WHERE,
+        { OR: [{ phone: { contains: "5551234", mode: "insensitive" } }] },
+      ],
+    });
+  });
+
+  it("ANDs date, duration (excluding null), and status", () => {
+    const from = new Date("2026-09-01T15:00:00.000Z");
+    const to = new Date("2026-09-03T13:00:00.000Z");
+    const where = buildCallLogListWhere(
+      {
+        q: null,
+        startedFrom: from,
+        startedTo: to,
+        minDurationSeconds: 30,
+        maxDurationSeconds: 300,
+        status: CallStatus.completed,
+      },
+      [],
+    );
+    expect(where).toEqual({
+      AND: [
+        VISIBLE_CALL_LOG_WHERE,
+        { startedAt: { gte: from, lte: to } },
+        { durationSeconds: { not: null, gte: 30, lte: 300 } },
+        { status: CallStatus.completed },
+      ],
+    });
+  });
+
+  it("applies a single duration bound and still excludes null duration", () => {
+    expect(
+      buildCallLogListWhere({ ...emptyQuery, minDurationSeconds: 0 }, []),
+    ).toEqual({
+      AND: [
+        VISIBLE_CALL_LOG_WHERE,
+        { durationSeconds: { not: null, gte: 0 } },
+      ],
+    });
   });
 });
 

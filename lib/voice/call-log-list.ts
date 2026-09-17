@@ -160,6 +160,56 @@ export function callLogListHasFilters(query: CallLogListQuery): boolean {
   );
 }
 
+export function callLogSearchDigits(q: string): string {
+  return q.replace(/\D/g, "");
+}
+
+export function buildCallLogListWhere(
+  query: CallLogListQuery,
+  contactPhones: string[],
+): Prisma.CallLogWhereInput {
+  const clauses: Prisma.CallLogWhereInput[] = [VISIBLE_CALL_LOG_WHERE];
+
+  if (query.q) {
+    const or: Prisma.CallLogWhereInput[] = [
+      { phone: { contains: query.q, mode: "insensitive" } },
+    ];
+    const digits = callLogSearchDigits(query.q);
+    if (digits && digits !== query.q) {
+      or.push({ phone: { contains: digits, mode: "insensitive" } });
+    }
+    if (contactPhones.length > 0) {
+      or.push({ phone: { in: contactPhones } });
+    }
+    clauses.push({ OR: or });
+  }
+
+  if (query.startedFrom || query.startedTo) {
+    clauses.push({
+      startedAt: {
+        ...(query.startedFrom ? { gte: query.startedFrom } : {}),
+        ...(query.startedTo ? { lte: query.startedTo } : {}),
+      },
+    });
+  }
+
+  if (query.minDurationSeconds != null || query.maxDurationSeconds != null) {
+    clauses.push({
+      durationSeconds: {
+        not: null,
+        ...(query.minDurationSeconds != null ? { gte: query.minDurationSeconds } : {}),
+        ...(query.maxDurationSeconds != null ? { lte: query.maxDurationSeconds } : {}),
+      },
+    });
+  }
+
+  if (query.status) {
+    clauses.push({ status: query.status });
+  }
+
+  return { AND: clauses };
+}
+
 export function datetimeLocalToIso(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) {
