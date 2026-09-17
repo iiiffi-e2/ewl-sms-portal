@@ -1,12 +1,18 @@
+import { CallStatus } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import {
+  CALL_LOG_STATUS_FILTER_OPTIONS,
+  buildCallLogListSearchParams,
   buildCallLogPageItems,
+  callLogListHasFilters,
   callLogPageCount,
   canSaveContactFromCallLog,
+  datetimeLocalToIso,
   decorateCallLogsWithContacts,
   isPlaceholderCallLog,
   parseCallLogListLimit,
   parseCallLogListPage,
+  parseCallLogListQuery,
 } from "@/lib/voice/call-log-list";
 
 describe("parseCallLogListLimit", () => {
@@ -99,6 +105,128 @@ describe("buildCallLogPageItems", () => {
       10,
       11,
       12,
+    ]);
+  });
+});
+
+describe("parseCallLogListQuery", () => {
+  it("treats omitted and blank params as no filters", () => {
+    expect(parseCallLogListQuery({})).toEqual({
+      ok: true,
+      query: {
+        q: null,
+        startedFrom: null,
+        startedTo: null,
+        minDurationSeconds: null,
+        maxDurationSeconds: null,
+        status: null,
+      },
+    });
+    const blank = parseCallLogListQuery({ q: "  ", status: "" });
+    expect(blank.ok).toBe(true);
+    if (blank.ok) {
+      expect(callLogListHasFilters(blank.query)).toBe(false);
+    }
+    const empty = parseCallLogListQuery({});
+    if (empty.ok) {
+      expect(callLogListHasFilters(empty.query)).toBe(false);
+    }
+  });
+
+  it("parses search, dates, duration, and status", () => {
+    const parsed = parseCallLogListQuery({
+      q: "  Ada  ",
+      startedFrom: "2026-09-01T15:00:00.000Z",
+      startedTo: "2026-09-03T13:00:00.000Z",
+      minDurationSeconds: "30",
+      maxDurationSeconds: "300",
+      status: "completed",
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    expect(parsed.query.q).toBe("Ada");
+    expect(parsed.query.startedFrom?.toISOString()).toBe("2026-09-01T15:00:00.000Z");
+    expect(parsed.query.startedTo?.toISOString()).toBe("2026-09-03T13:00:00.000Z");
+    expect(parsed.query.minDurationSeconds).toBe(30);
+    expect(parsed.query.maxDurationSeconds).toBe(300);
+    expect(parsed.query.status).toBe(CallStatus.completed);
+    expect(callLogListHasFilters(parsed.query)).toBe(true);
+  });
+
+  it("rejects invalid dates, inverted ranges, bad duration, and unknown status", () => {
+    expect(parseCallLogListQuery({ startedFrom: "not-a-date" })).toEqual({
+      ok: false,
+      error: "startedFrom must be a valid datetime.",
+    });
+    expect(parseCallLogListQuery({ startedTo: "not-a-date" })).toEqual({
+      ok: false,
+      error: "startedTo must be a valid datetime.",
+    });
+    expect(
+      parseCallLogListQuery({
+        startedFrom: "2026-09-03T13:00:00.000Z",
+        startedTo: "2026-09-01T15:00:00.000Z",
+      }),
+    ).toEqual({ ok: false, error: "startedFrom must be on or before startedTo." });
+    expect(parseCallLogListQuery({ minDurationSeconds: "-1" })).toEqual({
+      ok: false,
+      error: "minDurationSeconds must be a non-negative integer.",
+    });
+    expect(parseCallLogListQuery({ maxDurationSeconds: "1.5" })).toEqual({
+      ok: false,
+      error: "maxDurationSeconds must be a non-negative integer.",
+    });
+    expect(
+      parseCallLogListQuery({ minDurationSeconds: "40", maxDurationSeconds: "10" }),
+    ).toEqual({
+      ok: false,
+      error: "minDurationSeconds must be on or before maxDurationSeconds.",
+    });
+    expect(parseCallLogListQuery({ status: "missed" })).toEqual({
+      ok: false,
+      error: "status is not a valid call status.",
+    });
+  });
+});
+
+describe("datetimeLocalToIso", () => {
+  it("returns null for blank input and ISO for a local datetime", () => {
+    expect(datetimeLocalToIso("")).toBeNull();
+    expect(datetimeLocalToIso("   ")).toBeNull();
+    const iso = datetimeLocalToIso("2026-09-17T15:00");
+    expect(iso).toBe(new Date("2026-09-17T15:00").toISOString());
+  });
+});
+
+describe("buildCallLogListSearchParams", () => {
+  it("always includes page and limit and omits empty filters", () => {
+    expect(buildCallLogListSearchParams({ page: 2 })).toBe("page=2&limit=50");
+    expect(
+      buildCallLogListSearchParams({
+        page: 1,
+        q: "Ada",
+        startedFrom: "2026-09-01T15:00:00.000Z",
+        status: "completed",
+      }),
+    ).toBe(
+      "page=1&limit=50&q=Ada&startedFrom=2026-09-01T15%3A00%3A00.000Z&status=completed",
+    );
+  });
+});
+
+describe("CALL_LOG_STATUS_FILTER_OPTIONS", () => {
+  it("lists ended statuses before live ones", () => {
+    expect(CALL_LOG_STATUS_FILTER_OPTIONS).toEqual([
+      CallStatus.completed,
+      CallStatus.no_answer,
+      CallStatus.busy,
+      CallStatus.failed,
+      CallStatus.canceled,
+      CallStatus.initiating,
+      CallStatus.ringing,
+      CallStatus.in_progress,
     ]);
   });
 });
