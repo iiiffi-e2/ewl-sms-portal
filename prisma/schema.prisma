@@ -364,6 +364,18 @@ model InternalNote {
   @@index([userId])
 }
 
+// One row per background job. lockedUntil is the earliest time another
+// instance may start that job. Holds the CommStack inbox sync to a single
+// run no matter how many inboxes are open.
+model SyncLease {
+  id          String   @id
+  lockedUntil DateTime
+  // Identifies the holder so a finished sync cannot clear a newer lease.
+  ownerToken  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model ConsentEvent {
   id        String           @id @default(uuid())
   contactId String

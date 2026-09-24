@@ -12,6 +12,7 @@ import { ensureOpenPhoneConversation } from "@/lib/contact-conversation";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
 import { OPT_IN_INTRO_TEXT, matchStartKeyword, matchStopKeyword } from "@/lib/consent";
+import { buildSmsStatusCallbackUrl } from "@/lib/status";
 
 export async function POST(request: Request) {
   const payload = await request.formData();
@@ -98,19 +99,48 @@ export async function POST(request: Request) {
       },
     });
 
+    let result: { sid: string };
     try {
       const twilioClient = getTwilioClient();
-      const result = await twilioClient.messages.create({
+      result = await twilioClient.messages.create({
         from: getTwilioFromNumber(),
         to: normalizedPhone,
         body: OPT_IN_INTRO_TEXT,
-        statusCallback: `${process.env.NEXTAUTH_URL}/api/webhooks/sms-status`,
+        statusCallback: buildSmsStatusCallbackUrl(queuedMessage.id),
       });
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : "Failed to send resubscribe disclosure.";
 
       await prisma.$transaction([
-        prisma.message.update({
-          where: { id: queuedMessage.id },
+        prisma.message.updateMany({
+          where: { id: queuedMessage.id, status: MessageStatus.queued },
+          data: { status: MessageStatus.failed, errorMessage: detail },
+        }),
+        prisma.consentEvent.create({
+          data: {
+            contactId: contact.id,
+            messageId: queuedMessage.id,
+            type: ConsentEventType.intro_failed,
+            detail,
+          },
+        }),
+      ]);
+      return NextResponse.json({ ok: true });
+    }
+
+    try {
+      await prisma.$transaction([
+        prisma.message.updateMany({
+          where: {
+            id: queuedMessage.id,
+            status: { in: [MessageStatus.queued, MessageStatus.sent] },
+          },
           data: { twilioSid: result.sid, status: MessageStatus.sent },
+        }),
+        prisma.message.updateMany({
+          where: { id: queuedMessage.id, twilioSid: null },
+          data: { twilioSid: result.sid },
         }),
         prisma.contact.update({
           where: { id: contact.id },
@@ -131,23 +161,7 @@ export async function POST(request: Request) {
         }),
       ]);
     } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : "Failed to send resubscribe disclosure.";
-
-      await prisma.$transaction([
-        prisma.message.update({
-          where: { id: queuedMessage.id },
-          data: { status: MessageStatus.failed, errorMessage: detail },
-        }),
-        prisma.consentEvent.create({
-          data: {
-            contactId: contact.id,
-            messageId: queuedMessage.id,
-            type: ConsentEventType.intro_failed,
-            detail,
-          },
-        }),
-      ]);
+      console.error("[sms] resubscribe persist failed after Twilio accept", error);
     }
   }
 

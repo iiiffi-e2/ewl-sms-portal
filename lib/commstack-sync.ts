@@ -16,15 +16,43 @@ import {
   outboundEchoMatchFilter,
   persistInboundCommStackMessage,
 } from "@/lib/commstack-voice-ingest";
-import { isIngestibleCommStackMessage } from "@/lib/voice-messages";
+import {
+  CONVERSATION_SYNC_COOLDOWN_MS,
+  INBOX_SYNC_COOLDOWN_MS,
+  inboxSyncDecision,
+  shouldSyncConversation,
+} from "@/lib/commstack-sync-gate";
+import { finishInboxSyncLease, tryAcquireInboxSyncLease } from "@/lib/sync-lease";
+import { isIngestibleCommStackMessage, isVoiceCommStackMessage } from "@/lib/voice-messages";
 
 /** Max Notify threads to backfill per inbox sync pass. */
 const INBOX_SYNC_LIMIT = 25;
+
+const conversationSyncStartedAt = new Map<string, number>();
+let inboxSyncInFlight: Promise<{ synced: number; imported: number }> | null = null;
+let inboxSyncFinishedAt = 0;
+
+function rememberConversationSync(conversationId: string, now: number) {
+  if (conversationSyncStartedAt.size > 200) {
+    for (const [id, startedAt] of conversationSyncStartedAt) {
+      if (now - startedAt >= CONVERSATION_SYNC_COOLDOWN_MS) {
+        conversationSyncStartedAt.delete(id);
+      }
+    }
+  }
+  conversationSyncStartedAt.set(conversationId, now);
+}
 
 export async function syncCommStackConversation(conversationId: string): Promise<number> {
   if (!isCommStackConfigured()) {
     return 0;
   }
+
+  const now = Date.now();
+  if (!shouldSyncConversation(now, conversationSyncStartedAt.get(conversationId))) {
+    return 0;
+  }
+  rememberConversationSync(conversationId, now);
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -53,6 +81,24 @@ export async function syncCommStackConversation(conversationId: string): Promise
         limit: 50,
       });
 
+  const historyIds = history
+    .map((item) => item.messageId)
+    .filter((id): id is string => Boolean(id));
+  const existingRows = historyIds.length
+    ? await prisma.message.findMany({
+        where: { commStackMessageId: { in: historyIds } },
+        select: {
+          commStackMessageId: true,
+          attachment: { select: { id: true } },
+        },
+      })
+    : [];
+  const existingById = new Map(
+    existingRows.flatMap((row) =>
+      row.commStackMessageId ? [[row.commStackMessageId, row] as const] : [],
+    ),
+  );
+
   let imported = 0;
   for (const item of history) {
     if (
@@ -67,14 +113,11 @@ export async function syncCommStackConversation(conversationId: string): Promise
     }
 
     const isOutbound = item.sender === config.portalUserId;
+    const existing = existingById.get(item.messageId);
 
     // CareText already writes portal outbound on send. Re-importing history echoes
     // creates duplicate bubbles (especially when ackId and history messageId differ).
     if (isOutbound) {
-      const existing = await prisma.message.findUnique({
-        where: { commStackMessageId: item.messageId },
-        select: { id: true },
-      });
       if (existing) continue;
 
       const echoMatch = outboundEchoMatchFilter({
@@ -103,11 +146,22 @@ export async function syncCommStackConversation(conversationId: string): Promise
             where: { id: orphan.id },
             data: {
               commStackMessageId: item.messageId,
-              status: MessageStatus.sent,
+              ...(orphan.status === MessageStatus.queued
+                ? { status: MessageStatus.sent }
+                : {}),
             },
           });
         }
       }
+      continue;
+    }
+
+    const needsAttachment =
+      isVoiceCommStackMessage({
+        type: item.type,
+        file: item.file,
+      }) && !existing?.attachment;
+    if (existing && !needsAttachment) {
       continue;
     }
 
@@ -146,13 +200,9 @@ export async function syncCommStackConversation(conversationId: string): Promise
  * Pull CommStack history for recent Notify conversations so inbound replies
  * appear in the inbox list even when those threads are not open in the UI.
  */
-export async function syncCommStackInbox(options?: {
+async function syncCommStackInboxNow(options?: {
   limit?: number;
 }): Promise<{ synced: number; imported: number }> {
-  if (!isCommStackConfigured()) {
-    return { synced: 0, imported: 0 };
-  }
-
   const limit = options?.limit ?? INBOX_SYNC_LIMIT;
   const conversations = await prisma.conversation.findMany({
     where: {
@@ -173,4 +223,48 @@ export async function syncCommStackInbox(options?: {
   }
 
   return { synced: conversations.length, imported };
+}
+
+export async function syncCommStackInbox(options?: {
+  limit?: number;
+}): Promise<{ synced: number; imported: number; skipped?: boolean }> {
+  if (!isCommStackConfigured()) {
+    return { synced: 0, imported: 0 };
+  }
+
+  if (inboxSyncInFlight) {
+    return inboxSyncInFlight;
+  }
+
+  const decision = inboxSyncDecision(Date.now(), {
+    inFlight: false,
+    lastFinishedAt: inboxSyncFinishedAt,
+  }, INBOX_SYNC_COOLDOWN_MS);
+  if (decision === "skip") {
+    return { synced: 0, imported: 0, skipped: true };
+  }
+
+  // One history pull for the whole deployment. Every other open inbox gets
+  // skipped until this run finishes and the cooldown elapses.
+  const lease = await tryAcquireInboxSyncLease();
+  if (!lease) {
+    inboxSyncFinishedAt = Date.now();
+    return { synced: 0, imported: 0, skipped: true };
+  }
+
+  const run = (async () => {
+    try {
+      return await syncCommStackInboxNow(options);
+    } finally {
+      await finishInboxSyncLease(lease);
+      inboxSyncFinishedAt = Date.now();
+    }
+  })();
+  inboxSyncInFlight = run;
+  void run.finally(() => {
+    if (inboxSyncInFlight === run) {
+      inboxSyncInFlight = null;
+    }
+  });
+  return run;
 }

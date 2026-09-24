@@ -14,6 +14,7 @@ import { EmbedNewConversationForm } from "@/components/caretext/EmbedNewConversa
 import { ConversationThreadLoading } from "@/components/caretext/ConversationThreadLoading";
 import { mergeMessages, useConversationDetail } from "@/hooks/useConversationDetail";
 import { getConversationsListRevision } from "@/lib/conversation-revision";
+import { claimNotifyInboxSync } from "@/lib/notify-inbox-sync";
 import { VOICE_MESSAGE_BODY } from "@/lib/voice-messages";
 import { createVoiceSendFormData } from "@/lib/voice-recorder";
 
@@ -183,7 +184,10 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       // Pull inbound Notify DMs for recent Notify threads (open or not) so the
       // inbox list updates without opening each chat.
       const now = Date.now();
-      if (now - notifyInboxSyncAtRef.current >= NOTIFY_INBOX_SYNC_MS) {
+      if (
+        now - notifyInboxSyncAtRef.current >= NOTIFY_INBOX_SYNC_MS &&
+        claimNotifyInboxSync(now)
+      ) {
         notifyInboxSyncAtRef.current = now;
         try {
           await fetch("/api/commstack/sync-inbox", { method: "POST" });
@@ -481,7 +485,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
       setIsNewConversation(false);
       void Promise.all([
         loadConversations(),
-        loadConversationDetail(data.conversationId),
+        loadConversationDetail(data.conversationId, { fresh: true }),
       ]);
     },
     [
@@ -595,7 +599,7 @@ export function EmbedInboxClient({ initialConversationId }: { initialConversatio
 
       void Promise.all([
         loadConversations(),
-        loadConversationDetail(targetConversationId),
+        loadConversationDetail(targetConversationId, { fresh: true }),
       ]);
     },
     [
