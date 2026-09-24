@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, startTransition } from "react";
 import { getConversationDetailRevision } from "@/lib/conversation-revision";
+import { shouldSyncNotifyThread } from "@/lib/notify-inbox-sync";
 
 type ConversationMessage = {
   id: string;
@@ -146,6 +147,8 @@ export function useConversationDetail(initialConversationId?: string) {
   const cacheRef = useRef(new Map<string, CacheEntry>());
   const selectedIdRef = useRef<string | null>(conversationId);
   const detailAbortRef = useRef<AbortController | null>(null);
+  const detailFlightRef = useRef<{ id: string; promise: Promise<void> } | null>(null);
+  const notifyThreadSyncAtRef = useRef(new Map<string, number>());
   const prefetchingRef = useRef(new Set<string>());
 
   const isLoadingDetail =
@@ -208,52 +211,86 @@ export function useConversationDetail(initialConversationId?: string) {
   );
 
   const loadConversationDetail = useCallback(
-    async (id: string) => {
+    (id: string, options?: { fresh?: boolean }) => {
+      const inflight = detailFlightRef.current;
+      // Polling used to abort and restart this request every few seconds. The
+      // server kept running the aborted CommStack sync, so the next poll stacked
+      // another one on top. Reuse the in-flight load for the same thread.
+      // A fresh load (just after send) must not reuse that in-flight snapshot:
+      // Accelerate may still be serving the message as `queued`.
+      if (inflight?.id === id && !options?.fresh) {
+        return inflight.promise;
+      }
+
       detailAbortRef.current?.abort();
       const controller = new AbortController();
       detailAbortRef.current = controller;
 
-      try {
-        const response = await fetch(`/api/conversations/${id}`, { signal: controller.signal });
-        if (!response.ok) {
-          return;
-        }
-
-        const data = await response.json();
-        const conversation = data.conversation as ConversationDetail;
-
-        if (conversation.contact?.notifyClientId || conversation.contact?.notifyChannelId) {
-          try {
-            await fetch(`/api/conversations/${id}/commstack-sync`, {
-              method: "POST",
-              signal: controller.signal,
-            });
-            // Bypass Accelerate so newly imported Notify replies are visible immediately.
-            const refreshed = await fetch(`/api/conversations/${id}?fresh=1`, {
-              signal: controller.signal,
-            });
-            if (refreshed.ok) {
-              const refreshedData = await refreshed.json();
-              ingestConversation(refreshedData.conversation as ConversationDetail, {
-                urgent: true,
-              });
-              return;
-            }
-          } catch (syncError) {
-            if (syncError instanceof DOMException && syncError.name === "AbortError") {
-              return;
-            }
-            // Fall through to show the local thread if CommStack sync fails.
+      const promise = (async () => {
+        try {
+          const cacheBust = options?.fresh ? "?fresh=1" : "";
+          const response = await fetch(`/api/conversations/${id}${cacheBust}`, {
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            return;
           }
-        }
 
-        ingestConversation(conversation);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
+          const data = await response.json();
+          const conversation = data.conversation as ConversationDetail;
+          const isNotify = Boolean(
+            conversation.contact?.notifyClientId || conversation.contact?.notifyChannelId,
+          );
+          const lastSyncAt = notifyThreadSyncAtRef.current.get(id) ?? null;
+
+          if (isNotify && shouldSyncNotifyThread(lastSyncAt, Date.now())) {
+            notifyThreadSyncAtRef.current.set(id, Date.now());
+            try {
+              const syncResponse = await fetch(`/api/conversations/${id}/commstack-sync`, {
+                method: "POST",
+                signal: controller.signal,
+              });
+              const syncBody = syncResponse.ok
+                ? await syncResponse.json().catch(() => null)
+                : null;
+              const imported = Number(syncBody?.imported ?? 0);
+              if (imported > 0) {
+                // Bypass Accelerate so newly imported Notify replies are visible immediately.
+                const refreshed = await fetch(`/api/conversations/${id}?fresh=1`, {
+                  signal: controller.signal,
+                });
+                if (refreshed.ok) {
+                  const refreshedData = await refreshed.json();
+                  ingestConversation(refreshedData.conversation as ConversationDetail, {
+                    urgent: true,
+                  });
+                  return;
+                }
+              }
+            } catch (syncError) {
+              if (syncError instanceof DOMException && syncError.name === "AbortError") {
+                return;
+              }
+              // Fall through to show the local thread if CommStack sync fails.
+            }
+          }
+
+          ingestConversation(conversation);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            return;
+          }
+          throw error;
         }
-        throw error;
-      }
+      })();
+
+      detailFlightRef.current = { id, promise };
+      void promise.finally(() => {
+        if (detailFlightRef.current?.promise === promise) {
+          detailFlightRef.current = null;
+        }
+      });
+      return promise;
     },
     [ingestConversation],
   );

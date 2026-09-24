@@ -15,6 +15,7 @@ import { evaluateOutboundConsent } from "@/lib/consent";
 import { isNotifyContact } from "@/lib/contact-identity";
 import { isSoftDeleted } from "@/lib/contact-soft-delete";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { buildSmsStatusCallbackUrl } from "@/lib/status";
 import { sendMessageSchema } from "@/lib/validators";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
 
@@ -277,44 +278,32 @@ export async function POST(request: Request) {
   }
 
   if (!contact.phone) {
-    return NextResponse.json({ error: "Contact is missing a phone number." }, { status: 400 });
-  }
-
-  try {
-    const twilioClient = getTwilioClient();
-    const result = await twilioClient.messages.create({
-      from: getTwilioFromNumber(),
-      to: contact.phone,
-      body,
-      statusCallback: `${process.env.NEXTAUTH_URL}/api/webhooks/sms-status`,
-    });
-
-    const savedMessage = await prisma.message.update({
-      where: { id: queuedMessage.id },
-      data: {
-        twilioSid: result.sid,
-        status: MessageStatus.sent,
-      },
-    });
-
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        lastMessageAt: new Date(),
-        status: ConversationStatus.awaiting_reply,
-      },
-    });
-
-    return NextResponse.json({
-      message: savedMessage,
-      conversationId: conversation.id,
-    });
-  } catch (error) {
     await prisma.message.update({
       where: { id: queuedMessage.id },
       data: {
         status: MessageStatus.failed,
-        errorMessage: error instanceof Error ? error.message : "Failed to send SMS.",
+        errorMessage: "Contact is missing a phone number.",
+      },
+    });
+    return NextResponse.json({ error: "Contact is missing a phone number." }, { status: 400 });
+  }
+
+  let result: { sid: string };
+  try {
+    const twilioClient = getTwilioClient();
+    result = await twilioClient.messages.create({
+      from: getTwilioFromNumber(),
+      to: contact.phone,
+      body,
+      statusCallback: buildSmsStatusCallbackUrl(queuedMessage.id),
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to send SMS.";
+    await prisma.message.updateMany({
+      where: { id: queuedMessage.id, status: MessageStatus.queued },
+      data: {
+        status: MessageStatus.failed,
+        errorMessage,
       },
     });
 
@@ -326,9 +315,49 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to send SMS." },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: errorMessage }, { status: 502 });
   }
+
+  // Twilio already accepted the message. A status callback can land before this
+  // write and move the row to delivered; don't clobber that, and don't tell the
+  // staff the send failed (that is what produces the duplicate "second attempt").
+  try {
+    await prisma.message.updateMany({
+      where: {
+        id: queuedMessage.id,
+        status: { in: [MessageStatus.queued, MessageStatus.sent] },
+      },
+      data: {
+        twilioSid: result.sid,
+        status: MessageStatus.sent,
+      },
+    });
+    await prisma.message.updateMany({
+      where: { id: queuedMessage.id, twilioSid: null },
+      data: { twilioSid: result.sid },
+    });
+  } catch (error) {
+    console.error("[sms] status write failed after Twilio accept", error);
+  }
+
+  try {
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessageAt: new Date(),
+        status: ConversationStatus.awaiting_reply,
+      },
+    });
+  } catch (error) {
+    console.error("[sms] conversation bump failed after Twilio accept", error);
+  }
+
+  return NextResponse.json({
+    message: {
+      ...queuedMessage,
+      twilioSid: result.sid,
+      status: MessageStatus.sent,
+    },
+    conversationId: conversation.id,
+  });
 }

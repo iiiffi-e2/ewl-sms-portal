@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useSession } from "next-auth/react";
+import { claimNotifyInboxSync } from "@/lib/notify-inbox-sync";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
 import { ConversationStatusControls } from "@/components/caretext/ConversationStatusControls";
@@ -208,7 +209,10 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       // Pull inbound Notify DMs for recent Notify threads (open or not) so the
       // inbox list / desktop notifications update without opening each chat.
       const now = Date.now();
-      if (now - notifyInboxSyncAtRef.current >= NOTIFY_INBOX_SYNC_MS) {
+      if (
+        now - notifyInboxSyncAtRef.current >= NOTIFY_INBOX_SYNC_MS &&
+        claimNotifyInboxSync(now)
+      ) {
         notifyInboxSyncAtRef.current = now;
         try {
           await fetch("/api/commstack/sync-inbox", { method: "POST" });
@@ -611,7 +615,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       // Don't block the composer on inbox/detail refetch (Notify sync can take seconds).
       void Promise.all([
         loadConversations(),
-        loadConversationDetail(data.conversationId),
+        loadConversationDetail(data.conversationId, { fresh: true }),
       ]);
     },
     [
@@ -725,7 +729,7 @@ export function DashboardClient({ initialConversationId }: { initialConversation
 
       void Promise.all([
         loadConversations(),
-        loadConversationDetail(targetConversationId),
+        loadConversationDetail(targetConversationId, { fresh: true }),
       ]);
     },
     [

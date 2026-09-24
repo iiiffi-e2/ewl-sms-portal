@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/api-auth";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
 import { OPT_IN_INTRO_TEXT } from "@/lib/consent";
+import { buildSmsStatusCallbackUrl } from "@/lib/status";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await requireSession();
@@ -77,7 +78,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       from: getTwilioFromNumber(),
       to: contact.phone,
       body: OPT_IN_INTRO_TEXT,
-      statusCallback: `${process.env.NEXTAUTH_URL}/api/webhooks/sms-status`,
+      statusCallback: buildSmsStatusCallbackUrl(queuedMessage.id),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send opt-in intro.";
@@ -105,10 +106,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   // Twilio accepted the intro (accept-on-send). Flip the contact to opted_in and
   // record the evidence atomically so consent state and audit never diverge.
-  const [savedMessage] = await prisma.$transaction([
-    prisma.message.update({
-      where: { id: queuedMessage.id },
+  await prisma.$transaction([
+    prisma.message.updateMany({
+      where: {
+        id: queuedMessage.id,
+        status: { in: [MessageStatus.queued, MessageStatus.sent] },
+      },
       data: { twilioSid: result.sid, status: MessageStatus.sent },
+    }),
+    prisma.message.updateMany({
+      where: { id: queuedMessage.id, twilioSid: null },
+      data: { twilioSid: result.sid },
     }),
     prisma.contact.update({
       where: { id: contact.id },
@@ -129,5 +137,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     }),
   ]);
 
-  return NextResponse.json({ message: savedMessage, conversationId: conversation.id });
+  const savedMessage = await prisma.message.findUnique({ where: { id: queuedMessage.id } });
+
+  return NextResponse.json({
+    message: savedMessage ?? {
+      ...queuedMessage,
+      twilioSid: result.sid,
+      status: MessageStatus.sent,
+    },
+    conversationId: conversation.id,
+  });
 }

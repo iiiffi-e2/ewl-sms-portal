@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { OPT_IN_INTRO_TEXT, matchStopKeyword } from "@/lib/consent";
+import { buildSmsStatusCallbackUrl } from "@/lib/status";
 import {
   getTwilioClient,
   getTwilioFromNumber,
@@ -202,18 +203,46 @@ export async function sendGroupConsentIntro(params: {
     },
   });
 
+  let result: { sid: string };
   try {
-    const result = await getTwilioClient().messages.create({
+    result = await getTwilioClient().messages.create({
       from: getTwilioFromNumber(),
       to: contact.phone,
       body: OPT_IN_INTRO_TEXT,
-      statusCallback: `${process.env.NEXTAUTH_URL}/api/webhooks/sms-status`,
+      statusCallback: buildSmsStatusCallbackUrl(queuedMessage.id),
     });
-
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to send intro.";
     await prisma.$transaction([
-      prisma.message.update({
-        where: { id: queuedMessage.id },
+      prisma.message.updateMany({
+        where: { id: queuedMessage.id, status: MessageStatus.queued },
+        data: { status: MessageStatus.failed, errorMessage: message },
+      }),
+      prisma.consentEvent.create({
+        data: {
+          contactId: contact.id,
+          messageId: queuedMessage.id,
+          userId: params.userId,
+          type: ConsentEventType.intro_failed,
+          detail: message,
+        },
+      }),
+    ]);
+    return { ok: false, error: message };
+  }
+
+  try {
+    await prisma.$transaction([
+      prisma.message.updateMany({
+        where: {
+          id: queuedMessage.id,
+          status: { in: [MessageStatus.queued, MessageStatus.sent] },
+        },
         data: { twilioSid: result.sid, status: MessageStatus.sent },
+      }),
+      prisma.message.updateMany({
+        where: { id: queuedMessage.id, twilioSid: null },
+        data: { twilioSid: result.sid },
       }),
       prisma.contact.update({
         where: { id: contact.id },
@@ -244,23 +273,10 @@ export async function sendGroupConsentIntro(params: {
     await maybeActivateTwilioGroup(params.conversationId);
     return { ok: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to send intro.";
-    await prisma.$transaction([
-      prisma.message.update({
-        where: { id: queuedMessage.id },
-        data: { status: MessageStatus.failed, errorMessage: message },
-      }),
-      prisma.consentEvent.create({
-        data: {
-          contactId: contact.id,
-          messageId: queuedMessage.id,
-          userId: params.userId,
-          type: ConsentEventType.intro_failed,
-          detail: message,
-        },
-      }),
-    ]);
-    return { ok: false, error: message };
+    // The SMS already left Twilio. Marking it failed here makes staff retry and
+    // sends a second intro. The status callback can still finish the row.
+    console.error("[sms] group intro persist failed after Twilio accept", error);
+    return { ok: true };
   }
 }
 
