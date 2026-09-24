@@ -22,6 +22,7 @@ import {
   inboxSyncDecision,
   shouldSyncConversation,
 } from "@/lib/commstack-sync-gate";
+import { finishInboxSyncLease, tryAcquireInboxSyncLease } from "@/lib/sync-lease";
 import { isIngestibleCommStackMessage, isVoiceCommStackMessage } from "@/lib/voice-messages";
 
 /** Max Notify threads to backfill per inbox sync pass. */
@@ -243,10 +244,24 @@ export async function syncCommStackInbox(options?: {
     return { synced: 0, imported: 0, skipped: true };
   }
 
-  const run = syncCommStackInboxNow(options);
+  // One history pull for the whole deployment. Every other open inbox gets
+  // skipped until this run finishes and the cooldown elapses.
+  const lease = await tryAcquireInboxSyncLease();
+  if (!lease) {
+    inboxSyncFinishedAt = Date.now();
+    return { synced: 0, imported: 0, skipped: true };
+  }
+
+  const run = (async () => {
+    try {
+      return await syncCommStackInboxNow(options);
+    } finally {
+      await finishInboxSyncLease(lease);
+      inboxSyncFinishedAt = Date.now();
+    }
+  })();
   inboxSyncInFlight = run;
   void run.finally(() => {
-    inboxSyncFinishedAt = Date.now();
     if (inboxSyncInFlight === run) {
       inboxSyncInFlight = null;
     }

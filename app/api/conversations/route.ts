@@ -14,6 +14,7 @@ import {
 import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
+import { getSharedInboxList } from "@/lib/inbox-list-cache";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
 import { VISIBLE_CALL_LOG_WHERE } from "@/lib/voice/call-log-list";
 
@@ -42,8 +43,11 @@ export async function GET(request: Request) {
   const includeArchived = searchParams.get("includeArchived") === "1";
   const typeFilter = searchParams.get("type");
 
+  const isSharedInbox = !query && !contactId && !includeArchived && !typeFilter;
+
   try {
-    const conversations = await withDbRetry(() =>
+    const load = () =>
+      withDbRetry(() =>
       prisma.conversation.findMany({
         where: {
           ...(!includeArchived ? { archivedAt: null } : {}),
@@ -104,6 +108,8 @@ export async function GET(request: Request) {
         cacheStrategy: cacheFor({ ttl: 5, swr: 25 }),
       }),
     );
+
+    const conversations = isSharedInbox ? await getSharedInboxList(load) : await load();
 
     let matchedMessages: { conversationId: string; body: string }[] = [];
     if (query && shouldSearchMessageBodies(query) && conversations.length > 0) {
