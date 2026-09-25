@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
+import { dbErrorResponse } from "@/lib/api-errors";
 import { isCommStackConfigured } from "@/lib/commstack";
 import { syncCommStackInbox } from "@/lib/commstack-sync";
+import { isTransientDbError } from "@/lib/db";
 
 /**
  * Backfills inbound Notify DMs for recent conversations. Safe to call
@@ -21,6 +23,10 @@ export async function POST() {
     const result = await syncCommStackInbox();
     return NextResponse.json(result);
   } catch (error) {
+    if (isTransientDbError(error)) {
+      return dbErrorResponse(error);
+    }
+    console.error("[sync] inbox sync failed", error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Failed to sync Notify inbox.",
