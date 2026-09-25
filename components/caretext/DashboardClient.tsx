@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useSession } from "next-auth/react";
-import { claimNotifyInboxSync } from "@/lib/notify-inbox-sync";
+import { NOTIFY_THREAD_SYNC_MS, claimNotifyInboxSync } from "@/lib/notify-inbox-sync";
+import { nextPollDelayMs, retryAfterMs } from "@/lib/poll-backoff";
 import { ConversationList } from "@/components/caretext/ConversationList";
 import { ConversationHeader } from "@/components/caretext/ConversationHeader";
 import { ConversationStatusControls } from "@/components/caretext/ConversationStatusControls";
@@ -73,14 +74,16 @@ type ConversationListResponse = {
   }>;
 };
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 10_000;
 // Random extra delay added to each poll cycle so that tabs opened at the same
-// time (e.g. start of a shift) don't all poll on the same 5s boundary. Without
+// time (e.g. start of a shift) don't all poll on the same boundary. Without
 // this, N tabs fire N identical /api/conversations queries in the same instant,
 // all miss a cold Accelerate cache at once, and stampede the small connection
 // pool before any one request can complete and seed the cache. Spreading polls
 // across the window lets the first request seed the cache and the rest hit it.
-const POLL_JITTER_MS = 2500;
+const POLL_JITTER_MS = 5000;
+// Ceiling for the failure backoff, so a recovered database is picked up within ~2 min.
+const POLL_MAX_BACKOFF_MS = 120_000;
 const SEARCH_DEBOUNCE_MS = 300;
 // Even without new messages, refresh the open thread occasionally so delivery
 // status transitions (sent -> delivered) still surface within a bounded window.
@@ -121,14 +124,16 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   const renderedDetailLastMessageIdRef = useRef<string | null>(null);
   const openNotifyConversationRef = useRef(false);
   const notifyInboxSyncAtRef = useRef(0);
+  const listRetryAfterMsRef = useRef<number | null>(null);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch(
       `/api/conversations${debouncedSearch ? `?q=${encodeURIComponent(debouncedSearch)}` : ""}`,
     );
     // A transient server/DB error (e.g. Accelerate 503/429) must not crash the
-    // poll or clear the inbox; keep whatever we already have and try again next tick.
+    // poll or clear the inbox; keep whatever we already have and back off.
     if (!response.ok) {
+      listRetryAfterMsRef.current = retryAfterMs(response);
       return null;
     }
     let data: ConversationListResponse;
@@ -201,10 +206,14 @@ export function DashboardClient({ initialConversationId }: { initialConversation
   }, [initialConversationId, selectConversation]);
 
   useEffect(() => {
-    const tick = async () => {
+    /** Returns whether the server answered successfully, for poll backoff. */
+    const tick = async (): Promise<boolean> => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        return;
+        return true;
       }
+
+      let healthy = true;
+      listRetryAfterMsRef.current = null;
 
       // Pull inbound Notify DMs for recent Notify threads (open or not) so the
       // inbox list / desktop notifications update without opening each chat.
@@ -215,16 +224,23 @@ export function DashboardClient({ initialConversationId }: { initialConversation
       ) {
         notifyInboxSyncAtRef.current = now;
         try {
-          await fetch("/api/commstack/sync-inbox", { method: "POST" });
+          const syncResponse = await fetch("/api/commstack/sync-inbox", { method: "POST" });
+          if (syncResponse.status >= 500) {
+            healthy = false;
+          }
         } catch {
           // List poll below still runs; next cycle retries sync.
+          healthy = false;
         }
       }
 
       const list = await loadConversations();
+      if (!list) {
+        return false;
+      }
 
-      if (!conversationId || !list) {
-        return;
+      if (!conversationId) {
+        return healthy;
       }
 
       const listConversation = list.find((conversation) => conversation.id === conversationId);
@@ -233,18 +249,22 @@ export function DashboardClient({ initialConversationId }: { initialConversation
         newestMessageId !== null && newestMessageId !== renderedDetailLastMessageIdRef.current;
       const safetyElapsed = Date.now() - detailLastFetchAtRef.current >= DETAIL_SAFETY_REFRESH_MS;
       // Notify inbound often lands via CommStack history sync on detail load, not
-      // the conversations list preview. Keep syncing the open Notify thread each
-      // poll so replies appear without a manual refresh.
+      // the conversations list preview. Refresh the open Notify thread on the
+      // CommStack sync cadence so replies appear without a manual refresh.
       const isNotifyConversation =
         Boolean(
           listConversation?.contact?.notifyClientId ||
             listConversation?.contact?.notifyChannelId,
         ) || openNotifyConversationRef.current;
+      const notifyRefreshDue =
+        isNotifyConversation &&
+        Date.now() - detailLastFetchAtRef.current >= NOTIFY_THREAD_SYNC_MS;
 
-      if (hasNewMessage || safetyElapsed || isNotifyConversation) {
+      if (hasNewMessage || safetyElapsed || notifyRefreshDue) {
         detailLastFetchAtRef.current = Date.now();
-        void loadConversationDetail(conversationId);
+        void loadConversationDetail(conversationId).catch(() => undefined);
       }
+      return healthy;
     };
 
     // Self-scheduling timeout (instead of setInterval) so we can add per-cycle
@@ -252,20 +272,32 @@ export function DashboardClient({ initialConversationId }: { initialConversation
     // random offset, which keeps concurrent tabs desynchronized over time.
     let timeoutId: ReturnType<typeof setTimeout>;
     let cancelled = false;
+    let failures = 0;
     const scheduleNext = () => {
       if (cancelled) {
         return;
       }
+      const delay = nextPollDelayMs({
+        baseMs: POLL_INTERVAL_MS,
+        jitterMs: POLL_JITTER_MS,
+        maxMs: POLL_MAX_BACKOFF_MS,
+        failures,
+        retryAfterMs: listRetryAfterMsRef.current,
+      });
       timeoutId = setTimeout(async () => {
-        await tick();
+        try {
+          failures = (await tick()) ? 0 : failures + 1;
+        } catch {
+          failures += 1;
+        }
         scheduleNext();
-      }, POLL_INTERVAL_MS + Math.random() * POLL_JITTER_MS);
+      }, delay);
     };
     scheduleNext();
 
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void tick();
+      if (document.visibilityState === "visible" && failures === 0) {
+        void tick().catch(() => undefined);
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
