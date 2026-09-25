@@ -235,6 +235,22 @@ export async function verifyCommStackAccess(config: ContactCommStackConfig): Pro
   return true;
 }
 
+/**
+ * Every send used to confirm the same users exist (create, 409, get) before
+ * sending: up to six Notify round trips ahead of the message itself. Users are
+ * not deleted in normal operation, so remember a confirmed user for a while.
+ */
+const ENSURED_USER_TTL_MS = 10 * 60 * 1000;
+const ensuredUsers = new Map<string, { user: CommStackUser; at: number }>();
+
+function ensuredUserKey(config: ContactCommStackConfig, userId: string): string {
+  return `${config.baseUrl}|${config.appId}|${userId.trim()}`;
+}
+
+function forgetEnsuredCommStackUser(config: ContactCommStackConfig, userId: string): void {
+  ensuredUsers.delete(ensuredUserKey(config, userId));
+}
+
 export async function ensureCommStackUser(
   config: ContactCommStackConfig,
   input: {
@@ -250,29 +266,35 @@ export async function ensureCommStackUser(
     );
   }
 
+  const key = ensuredUserKey(config, input.userId);
+  const now = Date.now();
+  const cached = ensuredUsers.get(key);
+  if (cached && now - cached.at < ENSURED_USER_TTL_MS) {
+    return cached.user;
+  }
+
   const comms = await getScopedCommStackClient(config);
+  let user: CommStackUser;
   try {
-    const user = await comms.users.create({
+    const created = await comms.users.create({
       userId: input.userId.trim(),
       name: input.name ?? undefined,
       role: "mobile user",
     });
-    return {
-      userId: user.userId,
-      name: user.name,
-      role: user.role,
-    };
+    user = { userId: created.userId, name: created.name, role: created.role };
   } catch (error) {
-    if (error instanceof CommStackError && error.code === "ALREADY_EXISTS") {
-      const user = await comms.users.get(input.userId.trim());
-      return {
-        userId: user.userId,
-        name: user.name,
-        role: user.role,
-      };
+    if (!(error instanceof CommStackError && error.code === "ALREADY_EXISTS")) {
+      throw error;
     }
-    throw error;
+    const existing = await comms.users.get(input.userId.trim());
+    user = { userId: existing.userId, name: existing.name, role: existing.role };
   }
+
+  if (ensuredUsers.size > 1000) {
+    ensuredUsers.clear();
+  }
+  ensuredUsers.set(key, { user, at: now });
+  return user;
 }
 
 export async function ensurePortalCommStackUser(config: ContactCommStackConfig): Promise<void> {
@@ -406,12 +428,19 @@ export async function sendCommStackDirectMessage(
   await ensurePortalCommStackUser(config);
 
   // Per Notify v1.2: ackId is the stored message id (matches realtime message_id).
-  const ack = await comms.messages.sendDirect({
-    receiver: input.receiverUserId.trim(),
-    sender: config.portalUserId,
-    senderName: input.senderName ?? "EyeWatch LIVE",
-    text: input.text,
-  });
+  let ack;
+  try {
+    ack = await comms.messages.sendDirect({
+      receiver: input.receiverUserId.trim(),
+      sender: config.portalUserId,
+      senderName: input.senderName ?? "EyeWatch LIVE",
+      text: input.text,
+    });
+  } catch (error) {
+    forgetEnsuredCommStackUser(config, input.receiverUserId);
+    forgetEnsuredCommStackUser(config, config.portalUserId);
+    throw error;
+  }
 
   return { messageId: String(ack.ackId) };
 }
