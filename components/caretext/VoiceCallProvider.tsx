@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Device, Call } from "@twilio/voice-sdk";
 import { PRESENCE_HEARTBEAT_MS } from "@/lib/voice/presence";
+import { claimPresencePublish, releasePresencePublish } from "@/lib/voice/presence-heartbeat";
 import { completeIncomingInvite, parseIncomingInvite } from "@/lib/voice/incoming-invite";
 import { hangupCallLogPatchStatus } from "@/lib/voice/call-status";
 
@@ -75,10 +76,14 @@ async function resolveIncomingInvite(call: Call): Promise<IncomingCallInfo | nul
 }
 
 async function pingPresence() {
+  if (!claimPresencePublish()) {
+    return;
+  }
   await fetch("/api/voice/presence", { method: "POST" });
 }
 
 async function clearPresence() {
+  releasePresencePublish();
   await fetch("/api/voice/presence", { method: "DELETE", keepalive: true });
 }
 

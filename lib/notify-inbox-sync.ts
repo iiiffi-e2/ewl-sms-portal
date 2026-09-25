@@ -1,3 +1,5 @@
+import { browserLeaseStorage, claimCrossTabLease, type LeaseStorage } from "@/lib/cross-tab-lease";
+
 /** One browser holds the inbox-sync lease so sister tabs don't all POST at once. */
 export const NOTIFY_INBOX_SYNC_LEASE_MS = 12_000;
 
@@ -6,30 +8,12 @@ export const NOTIFY_THREAD_SYNC_MS = 15_000;
 
 const LEASE_KEY = "caretext:notify-inbox-sync";
 
-type LeaseStorage = {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-};
-
 export function claimNotifyInboxSync(
   now = Date.now(),
-  storage: LeaseStorage | null = typeof window === "undefined" ? null : window.localStorage,
+  storage: LeaseStorage | null = browserLeaseStorage(),
   leaseMs = NOTIFY_INBOX_SYNC_LEASE_MS,
 ): boolean {
-  if (!storage) return true;
-
-  try {
-    const raw = storage.getItem(LEASE_KEY);
-    const until = raw == null ? 0 : Number(raw);
-    if (Number.isFinite(until) && until > now) {
-      return false;
-    }
-
-    storage.setItem(LEASE_KEY, String(now + leaseMs));
-    return true;
-  } catch {
-    return true;
-  }
+  return claimCrossTabLease(LEASE_KEY, leaseMs, now, storage);
 }
 
 export function shouldSyncNotifyThread(
