@@ -285,11 +285,12 @@ export function useConversationDetail(initialConversationId?: string) {
       })();
 
       detailFlightRef.current = { id, promise };
-      void promise.finally(() => {
+      const clear = () => {
         if (detailFlightRef.current?.promise === promise) {
           detailFlightRef.current = null;
         }
-      });
+      };
+      promise.then(clear, clear);
       return promise;
     },
     [ingestConversation],
