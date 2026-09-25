@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { readFreshAccount, rememberAccount } from "@/lib/account-freshness";
+import { dbErrorResponse } from "@/lib/api-errors";
 import { getAuthSession } from "@/lib/auth";
+import { isTransientDbError } from "@/lib/db";
 import { prisma } from "@/lib/prisma";
 
 export async function requireSession() {
@@ -15,10 +17,20 @@ export async function requireSession() {
   const cached = readFreshAccount(session.user.id);
   let disabledAt = cached?.disabledAt ?? null;
   if (!cached) {
-    const account = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { disabledAt: true },
-    });
+    let account: { disabledAt: Date | null } | null;
+    try {
+      account = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { disabledAt: true },
+      });
+    } catch (error) {
+      // Routes call this outside their own try/catch; without this a DB timeout
+      // escapes as a bare 500 instead of a retryable 503.
+      if (isTransientDbError(error)) {
+        return { error: dbErrorResponse(error) };
+      }
+      throw error;
+    }
     if (!account) {
       return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
     }
