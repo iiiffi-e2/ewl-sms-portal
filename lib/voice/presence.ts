@@ -1,4 +1,5 @@
 export const PRESENCE_FRESH_MS = 3 * 60 * 1000;
+/** How often each tab checks whether it should publish; see PRESENCE_PUBLISH_MS. */
 export const PRESENCE_HEARTBEAT_MS = 15_000;
 export const MAX_INBOUND_RING_TARGETS = 10;
 

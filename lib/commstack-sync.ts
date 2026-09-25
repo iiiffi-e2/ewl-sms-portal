@@ -22,14 +22,23 @@ import {
   inboxSyncDecision,
   shouldSyncConversation,
 } from "@/lib/commstack-sync-gate";
+import { isTransientDbError } from "@/lib/db";
 import { finishInboxSyncLease, tryAcquireInboxSyncLease } from "@/lib/sync-lease";
 import { isIngestibleCommStackMessage, isVoiceCommStackMessage } from "@/lib/voice-messages";
 
 /** Max Notify threads to backfill per inbox sync pass. */
 const INBOX_SYNC_LIMIT = 25;
 
+/**
+ * Stop starting new threads after this long. A thread already in progress can
+ * still take one Notify timeout plus one query timeout, and the whole pass must
+ * finish inside INBOX_SYNC_LEASE_HOLD_MS or another instance starts a second one.
+ */
+export const INBOX_SYNC_BUDGET_MS = 20_000;
+
 const conversationSyncStartedAt = new Map<string, number>();
-let inboxSyncInFlight: Promise<{ synced: number; imported: number }> | null = null;
+let inboxSyncInFlight: Promise<{ synced: number; imported: number; skipped?: boolean }> | null =
+  null;
 let inboxSyncFinishedAt = 0;
 
 function rememberConversationSync(conversationId: string, now: number) {
@@ -217,12 +226,25 @@ async function syncCommStackInboxNow(options?: {
     select: { id: true },
   });
 
+  const deadline = Date.now() + INBOX_SYNC_BUDGET_MS;
+  let synced = 0;
   let imported = 0;
   for (const conversation of conversations) {
-    imported += await syncCommStackConversation(conversation.id);
+    if (Date.now() >= deadline) {
+      break;
+    }
+    synced += 1;
+    try {
+      imported += await syncCommStackConversation(conversation.id);
+    } catch (error) {
+      if (isTransientDbError(error)) {
+        throw error;
+      }
+      console.error("[sync] inbox thread sync failed", conversation.id, error);
+    }
   }
 
-  return { synced: conversations.length, imported };
+  return { synced, imported };
 }
 
 export async function syncCommStackInbox(options?: {
@@ -245,26 +267,27 @@ export async function syncCommStackInbox(options?: {
   }
 
   // One history pull for the whole deployment. Every other open inbox gets
-  // skipped until this run finishes and the cooldown elapses.
-  const lease = await tryAcquireInboxSyncLease();
-  if (!lease) {
-    inboxSyncFinishedAt = Date.now();
-    return { synced: 0, imported: 0, skipped: true };
-  }
-
-  const run = (async () => {
+  // skipped until this run finishes and the cooldown elapses. The in-flight
+  // slot is taken before the lease query so concurrent requests on this
+  // instance join it instead of each querying the lease.
+  const run = (async (): Promise<{ synced: number; imported: number; skipped?: boolean }> => {
+    const lease = await tryAcquireInboxSyncLease();
+    if (!lease) {
+      return { synced: 0, imported: 0, skipped: true };
+    }
     try {
       return await syncCommStackInboxNow(options);
     } finally {
       await finishInboxSyncLease(lease);
-      inboxSyncFinishedAt = Date.now();
     }
   })();
   inboxSyncInFlight = run;
-  void run.finally(() => {
+  const settle = () => {
+    inboxSyncFinishedAt = Date.now();
     if (inboxSyncInFlight === run) {
       inboxSyncInFlight = null;
     }
-  });
+  };
+  run.then(settle, settle);
   return run;
 }

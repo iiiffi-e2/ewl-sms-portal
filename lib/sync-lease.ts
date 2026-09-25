@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { INBOX_SYNC_COOLDOWN_MS } from "@/lib/commstack-sync-gate";
+import { isTransientDbError } from "@/lib/db";
 import { prisma } from "@/lib/prisma";
 
 export const INBOX_SYNC_LEASE_ID = "commstack-inbox";
@@ -14,6 +15,8 @@ export type InboxSyncLease = {
 /**
  * Atomically claim the global inbox sync. Returns null when another instance
  * already holds it, so open inboxes do not each pull CommStack history.
+ * Also returns null when the database is timing out or unreachable: granting
+ * the lease then would send every instance into a full sync at once.
  * If the table is not migrated yet, returns a token anyway and the
  * per-instance gate remains the only guard.
  */
@@ -33,6 +36,10 @@ export async function tryAcquireInboxSyncLease(now = new Date()): Promise<InboxS
     `);
     return rows.length > 0 ? { token } : null;
   } catch (error) {
+    if (isTransientDbError(error)) {
+      console.error("[sync] inbox lease query failed; skipping this sync", error);
+      return null;
+    }
     console.error("[sync] inbox lease unavailable; using per-instance gate only", error);
     return { token };
   }

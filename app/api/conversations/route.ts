@@ -15,6 +15,7 @@ import { assertContactIdentityXor } from "@/lib/contact-identity";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { createConversationSchema } from "@/lib/validators";
 import { getSharedInboxList } from "@/lib/inbox-list-cache";
+import { attachLatestMessages, loadLatestMessagePreviews } from "@/lib/inbox-previews";
 import { shouldSearchMessageBodies } from "@/lib/message-search";
 import { VISIBLE_CALL_LOG_WHERE } from "@/lib/voice/call-log-list";
 
@@ -46,68 +47,62 @@ export async function GET(request: Request) {
   const isSharedInbox = !query && !contactId && !includeArchived && !typeFilter;
 
   try {
-    const load = () =>
-      withDbRetry(() =>
-      prisma.conversation.findMany({
-        where: {
-          ...(!includeArchived ? { archivedAt: null } : {}),
-          ...(contactId ? { contactId } : {}),
-          ...(typeFilter === "group"
-            ? { type: ConversationType.group }
-            : typeFilter === "direct"
-              ? { type: ConversationType.direct }
+    const load = async () => {
+      const rows = await withDbRetry(() =>
+        prisma.conversation.findMany({
+          where: {
+            ...(!includeArchived ? { archivedAt: null } : {}),
+            ...(contactId ? { contactId } : {}),
+            ...(typeFilter === "group"
+              ? { type: ConversationType.group }
+              : typeFilter === "direct"
+                ? { type: ConversationType.direct }
+                : {}),
+            ...(query
+              ? {
+                  OR: [
+                    { contact: { name: { contains: query, mode: "insensitive" } } },
+                    { contact: { phone: { contains: query, mode: "insensitive" } } },
+                    { contact: { notifyClientId: { contains: query, mode: "insensitive" } } },
+                    { contact: { notifyChannelId: { contains: query, mode: "insensitive" } } },
+                    { contact: { facility: { contains: query, mode: "insensitive" } } },
+                    { title: { contains: query, mode: "insensitive" } },
+                    { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
+                    { participants: { some: { contact: { phone: { contains: query } } } } },
+                    { participants: { some: { contact: { notifyClientId: { contains: query } } } } },
+                    { participants: { some: { contact: { notifyChannelId: { contains: query } } } } },
+                    ...(shouldSearchMessageBodies(query)
+                      ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
+                      : []),
+                  ],
+                }
               : {}),
-          ...(query
-            ? {
-                OR: [
-                  { contact: { name: { contains: query, mode: "insensitive" } } },
-                  { contact: { phone: { contains: query, mode: "insensitive" } } },
-                  { contact: { notifyClientId: { contains: query, mode: "insensitive" } } },
-                  { contact: { notifyChannelId: { contains: query, mode: "insensitive" } } },
-                  { contact: { facility: { contains: query, mode: "insensitive" } } },
-                  { title: { contains: query, mode: "insensitive" } },
-                  { participants: { some: { contact: { name: { contains: query, mode: "insensitive" } } } } },
-                  { participants: { some: { contact: { phone: { contains: query } } } } },
-                  { participants: { some: { contact: { notifyClientId: { contains: query } } } } },
-                  { participants: { some: { contact: { notifyChannelId: { contains: query } } } } },
-                  ...(shouldSearchMessageBodies(query)
-                    ? [{ messages: { some: { body: { contains: query, mode: "insensitive" as const } } } }]
-                    : []),
-                ],
-              }
-            : {}),
-        },
-        orderBy: { lastMessageAt: "desc" },
-        // Bound the result set so the query stays fast and cacheable as the
-        // conversation table grows (see CONVERSATION_LIST_LIMIT above).
-        take: CONVERSATION_LIST_LIMIT,
-        include: {
-          contact: true,
-          participants: {
-            include: { contact: true },
           },
-          assignedTo: {
-            select: { id: true, name: true, email: true },
-          },
-          messages: {
-            orderBy: { createdAt: "desc" },
-            // The list only renders the single latest message as a preview
-            // (matched-search snippets come from the separate query below), so
-            // fetching one row per conversation avoids a 5x correlated subquery.
-            take: 1,
-            select: {
-              id: true,
-              body: true,
-              direction: true,
-              createdAt: true,
+          orderBy: { lastMessageAt: "desc" },
+          // Bound the result set so the query stays fast and cacheable as the
+          // conversation table grows (see CONVERSATION_LIST_LIMIT above).
+          take: CONVERSATION_LIST_LIMIT,
+          include: {
+            contact: true,
+            participants: {
+              include: { contact: true },
+            },
+            assignedTo: {
+              select: { id: true, name: true, email: true },
             },
           },
-        },
-        // Short cache keeps the inbox near-real-time (poll interval is 5s) while
-        // deduping many tabs' polls onto one origin query per window.
-        cacheStrategy: cacheFor({ ttl: 5, swr: 25 }),
-      }),
-    );
+          // Short cache keeps the inbox near-real-time while deduping many tabs'
+          // polls onto one origin query per window.
+          cacheStrategy: cacheFor({ ttl: 5, swr: 25 }),
+        }),
+      );
+      // The list renders only the latest message as a preview (matched-search
+      // snippets come from the separate query below).
+      const previews = await withDbRetry(() =>
+        loadLatestMessagePreviews(rows.map((conversation) => conversation.id)),
+      );
+      return attachLatestMessages(rows, previews);
+    };
 
     const conversations = isSharedInbox ? await getSharedInboxList(load) : await load();
 

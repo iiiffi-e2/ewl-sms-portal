@@ -24,11 +24,14 @@ export function getSharedInboxList<T>(load: () => Promise<T>, now = Date.now()):
     return value;
   });
   inflight = run;
-  void run.finally(() => {
+  // `finally` returns a new promise that re-rejects; it must be caught or a
+  // failed load becomes an unhandled rejection even though callers handle `run`.
+  const clear = () => {
     if (inflight === run) {
       inflight = null;
     }
-  });
+  };
+  run.then(clear, clear);
   return run;
 }
 
