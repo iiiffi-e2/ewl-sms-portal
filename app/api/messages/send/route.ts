@@ -18,11 +18,14 @@ import { normalizePhoneNumber } from "@/lib/phone";
 import { buildSmsStatusCallbackUrl } from "@/lib/status";
 import { sendMessageSchema } from "@/lib/validators";
 import { getTwilioClient, getTwilioFromNumber } from "@/lib/twilio";
+import { createPhaseTimer } from "@/lib/phase-timer";
 
 export async function POST(request: Request) {
+  const timer = createPhaseTimer("send");
   const authResult = await requireSession();
-  if ("error" in authResult) {
-    return authResult.error;
+  timer.mark("auth");
+  if (authResult.error) {
+    return timer.finish(authResult.error);
   }
 
   const payload = await request.json();
@@ -176,6 +179,7 @@ export async function POST(request: Request) {
       status: MessageStatus.queued,
     },
   });
+  timer.mark("db");
 
   if (notify) {
     if (!isCommStackConfigured()) {
@@ -227,6 +231,7 @@ export async function POST(request: Request) {
               senderName,
             });
           })();
+      timer.mark("provider");
 
       // Per Notify SDK 1.2, ackId is the stored message id (matches realtime message_id).
       const savedMessage = await prisma.message.update({
@@ -245,11 +250,16 @@ export async function POST(request: Request) {
         },
       });
 
-      return NextResponse.json({
-        message: savedMessage,
-        conversationId: conversation.id,
-      });
+      timer.mark("db");
+      return timer.finish(
+        NextResponse.json({
+          message: savedMessage,
+          conversationId: conversation.id,
+        }),
+        { kind: "notify" },
+      );
     } catch (error) {
+      timer.mark("provider");
       const message =
         error instanceof CommStackError
           ? error.message
@@ -273,7 +283,10 @@ export async function POST(request: Request) {
         },
       });
 
-      return NextResponse.json({ error: message }, { status: 502 });
+      timer.mark("db");
+      return timer.finish(NextResponse.json({ error: message }, { status: 502 }), {
+        kind: "notify",
+      });
     }
   }
 
@@ -297,7 +310,9 @@ export async function POST(request: Request) {
       body,
       statusCallback: buildSmsStatusCallbackUrl(queuedMessage.id),
     });
+    timer.mark("provider");
   } catch (error) {
+    timer.mark("provider");
     const errorMessage = error instanceof Error ? error.message : "Failed to send SMS.";
     await prisma.message.updateMany({
       where: { id: queuedMessage.id, status: MessageStatus.queued },
@@ -315,7 +330,10 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ error: errorMessage }, { status: 502 });
+    timer.mark("db");
+    return timer.finish(NextResponse.json({ error: errorMessage }, { status: 502 }), {
+      kind: "sms",
+    });
   }
 
   // Twilio already accepted the message. A status callback can land before this
@@ -352,12 +370,16 @@ export async function POST(request: Request) {
     console.error("[sms] conversation bump failed after Twilio accept", error);
   }
 
-  return NextResponse.json({
-    message: {
-      ...queuedMessage,
-      twilioSid: result.sid,
-      status: MessageStatus.sent,
-    },
-    conversationId: conversation.id,
-  });
+  timer.mark("db");
+  return timer.finish(
+    NextResponse.json({
+      message: {
+        ...queuedMessage,
+        twilioSid: result.sid,
+        status: MessageStatus.sent,
+      },
+      conversationId: conversation.id,
+    }),
+    { kind: "sms" },
+  );
 }

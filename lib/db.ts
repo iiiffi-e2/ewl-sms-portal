@@ -57,6 +57,18 @@ const RETRYABLE_PRISMA_CODES = new Set<string>([
   "P6008", // Accelerate: connection / engine start error
 ]);
 
+// Accelerate reports its own failures (e.g. the P6004 query timeout) as a
+// generic P5000 whose message embeds the real code as JSON:
+//   ... {"type":"UnknownJsonError","body":{"code":"P6004",...}} ...
+const EMBEDDED_CODE = /"code"\s*:\s*"(P\d{4})"/;
+
+function knownErrorCode(error: Prisma.PrismaClientKnownRequestError): string {
+  if (error.code === "P5000") {
+    return EMBEDDED_CODE.exec(error.message)?.[1] ?? error.code;
+  }
+  return error.code;
+}
+
 /**
  * Whether an error thrown by Prisma Client is a transient infrastructure blip
  * (unreachable DB, pool timeout, Accelerate 429/503) that should be reported to
@@ -68,7 +80,7 @@ export function isTransientDbError(error: unknown): boolean {
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return TRANSIENT_PRISMA_CODES.has(error.code);
+    return TRANSIENT_PRISMA_CODES.has(knownErrorCode(error));
   }
 
   // Accelerate rate limiting (429) and service degradation (503) surface as
@@ -99,7 +111,7 @@ export function isRetryableDbError(error: unknown): boolean {
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return RETRYABLE_PRISMA_CODES.has(error.code);
+    return RETRYABLE_PRISMA_CODES.has(knownErrorCode(error));
   }
 
   // Accelerate rate limiting (429) and service degradation (503) surface as
